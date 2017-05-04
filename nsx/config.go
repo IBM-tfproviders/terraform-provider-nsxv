@@ -30,15 +30,15 @@ func (c *Config) Client() (*govnsx.Client, error) {
 		return nil, fmt.Errorf("Error setting up client debug: %s", err)
 	}
 
-	nsxMrgParams := &govnsx.NsxManagerParams{
+	nsxMgrParams := &govnsx.NsxManagerConfig{
 		UserName:      c.User,
 		Password:      c.Password,
 		Uri:           c.NsxManagerUri,
 		AllowInsecssl: c.InsecureFlag,
-		RestAgentName: "govnsx",
+		UserAgentName: "govnsx",
 	}
 
-	client, err := govnsx.NewClient(nsxMrgParams)
+	client, err := govnsx.NewClient(nsxMgrParams)
 	if err != nil {
 		return nil, fmt.Errorf("Error setting up client: %s", err)
 	}

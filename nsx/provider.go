@@ -21,6 +21,7 @@ func Provider() terraform.ResourceProvider {
 			"password": &schema.Schema{
 				Type:        schema.TypeString,
 				Required:    true,
+				Sensitive:   true,
 				DefaultFunc: schema.EnvDefaultFunc("NSX_PASSWORD", nil),
 				Description: "The user password for NSX API operations.",
 			},
@@ -58,6 +59,13 @@ func Provider() terraform.ResourceProvider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("NSX_CLIENT_DEBUG_PATH", ""),
 				Description: "govnsx debug path for debug",
+			},
+
+			"user_agent_name": &schema.Schema{
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default: "Terraform-Nsx-Provider",
+				Description: "NSX Clinet user agent name",
 			},
 		},
 

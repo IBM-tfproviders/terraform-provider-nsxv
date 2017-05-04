@@ -6,7 +6,6 @@ build:
 
 fmt:
 	go fmt ./nsx 
-	go fmt ../govnsx
 
 all: deps build fmt
 
