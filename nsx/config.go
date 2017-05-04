@@ -14,6 +14,7 @@ type Config struct {
 	User          string
 	Password      string
 	NsxManagerUri string
+	UserAgentName string
 	InsecureFlag  bool
 	Debug         bool
 	DebugPath     string
@@ -35,7 +36,7 @@ func (c *Config) Client() (*govnsx.Client, error) {
 		Password:      c.Password,
 		Uri:           c.NsxManagerUri,
 		AllowInsecssl: c.InsecureFlag,
-		UserAgentName: "govnsx",
+		UserAgentName: c.UserAgentName,
 	}
 
 	client, err := govnsx.NewClient(nsxMgrParams)

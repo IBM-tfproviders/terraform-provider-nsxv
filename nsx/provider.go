@@ -82,8 +82,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	config := Config{
 		User:          d.Get("user").(string),
 		Password:      d.Get("password").(string),
-		InsecureFlag:  d.Get("allow_unverified_ssl").(bool),
 		NsxManagerUri: d.Get("nsx_manager_uri").(string),
+		UserAgentName: d.Get("user_agent_name").(string),
+		InsecureFlag:  d.Get("allow_unverified_ssl").(bool),
 		Debug:         d.Get("client_debug").(bool),
 		DebugPathRun:  d.Get("client_debug_path_run").(string),
 		DebugPath:     d.Get("client_debug_path").(string),
