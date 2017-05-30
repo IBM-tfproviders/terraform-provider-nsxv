@@ -64,13 +64,13 @@ func Provider() terraform.ResourceProvider {
 			"user_agent_name": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
-				Default: "Terraform-Nsx-Provider",
+				Default:     "Terraform-Nsx-Provider",
 				Description: "NSX Clinet user agent name",
 			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"nsx_network": resourceNsxNetwork(),
+			"nsxv_logical_switch": resourceLogicalSwitch(),
 		},
 
 		ConfigureFunc: providerConfigure,
