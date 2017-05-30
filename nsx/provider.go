@@ -71,6 +71,7 @@ func Provider() terraform.ResourceProvider {
 
 		ResourcesMap: map[string]*schema.Resource{
 			"nsxv_logical_switch": resourceLogicalSwitch(),
+			"nsxv_edge":           resourceNsxEdgeSGW(),
 		},
 
 		ConfigureFunc: providerConfigure,

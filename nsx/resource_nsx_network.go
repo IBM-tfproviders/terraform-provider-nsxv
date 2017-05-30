@@ -129,7 +129,7 @@ func resourceLogicalSwitchUpdate(d *schema.ResourceData, meta interface{}) error
 	}
 	if d.HasChange("tenant_id") {
 		_, v := d.GetChange("tenant_id")
-		updateVW.TenantId= v.(string)
+		updateVW.TenantId = v.(string)
 		log.Printf("[INFO] Updating Logical switch :tenant_id: %s", v)
 	}
 	if d.HasChange("control_plane_mode") {
