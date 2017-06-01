@@ -83,7 +83,7 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 
 	client := meta.(*govnsx.Client)
 
-	/* Get Edge configuration. Loop through all the vnics from 1-9.
+	/* Get Edge configuration. Loop through all the vnics from 0-9.
 	   If the portgroup matches, add new address group for the existing vnic.
 	   else create a new vnic for the portgroup.
 	   If all the vnics are configured, return err */
@@ -107,17 +107,20 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 	addrGroups = append(addrGroups, addrGroup)
 
 	vnic := nsxtypes.Vnic{}
-	vnic.Index = strconv.Itoa(1)
+	vnic.Index = strconv.Itoa(0) //TODO:
 	vnic.PortgroupId = dhcp.portgroup
 	vnic.AddressGroups = addrGroups
 	vnic.IsConnected = true
 
 	vnics = append(vnics, vnic)
 
+	// Deploy appliance to true
+	edgeCfg.Appliances.DeployAppliances = true
+
 	edgeUpdateSpec := &nsxtypes.EdgeInstallSpec{
-		Tenant: edgeCfg.Tenant,
-		//AppliancesList: edgeCfg.AppliancesList,
-		Vnics: vnics,
+		Tenant:     edgeCfg.Tenant,
+		Appliances: edgeCfg.Appliances,
+		Vnics:      vnics,
 	}
 
 	err = edge.Put(edgeUpdateSpec, dhcp.edgeId)
