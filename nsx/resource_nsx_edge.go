@@ -3,7 +3,6 @@ package nsx
 import (
 	"fmt"
 	"log"
-	"strconv"
 
 	"github.com/IBM-tfproviders/govnsx"
 	"github.com/IBM-tfproviders/govnsx/nsxresource"
@@ -11,31 +10,47 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
-type edgeSGW struct {
-	edgeName       string
-	description    string
-	edgeId         string
-	version        string
-	datacenter     string
-	tenantId       string
-	resourcePoolId string
-	datastoreId    string
-	folder         string
-	mgmtPortgroup  string
-	//mgmtAddr       string
+const (
+	ApplianceSizeCompact   = "compact"
+	ApplianceSizeLarge     = "large"
+	ApplianceSizeQuadLarge = "quadlarge"
+	ApplianceSizeXLarge    = "xlarge"
+)
+
+type mgmtInterfaceCfg struct {
+	portgroup string
+	ip        string
+	mask      string
 }
 
-func resourceNsxEdgeSGW() *schema.Resource {
+type applianceCfg struct {
+	resourcePoolId string
+	datastoreId    string
+	mgmtInterface  mgmtInterfaceCfg
+}
+
+type nsxEdge struct {
+	edgeName    string
+	edgeType    string
+	description string
+	datacenter  string
+	tenantId    string
+	folder      string
+	appliances  []applianceCfg
+}
+
+func resourceNsxEdge() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceNsxEdgeSGWCreate,
-		Read:   resourceNsxEdgeSGWRead,
-		Update: resourceNsxEdgeSGWUpdate,
-		Delete: resourceNsxEdgeSGWDelete,
+		Create: resourceNsxEdgeCreate,
+		Read:   resourceNsxEdgeRead,
+		Update: resourceNsxEdgeUpdate,
+		Delete: resourceNsxEdgeDelete,
 
 		Schema: map[string]*schema.Schema{
-			"version": &schema.Schema{
-				Type:     schema.TypeInt,
-				Computed: true,
+			"type": &schema.Schema{
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: false,
 			},
 			"datacenter": &schema.Schema{
 				Type:     schema.TypeString,
@@ -48,22 +63,12 @@ func resourceNsxEdgeSGW() *schema.Resource {
 				Default:  "Terraform Provider",
 				ForceNew: false,
 			},
-			"resource_pool_id": &schema.Schema{
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: false,
-			},
-			"datastore_id": &schema.Schema{
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: false,
-			},
 			"folder": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 				ForceNew: false,
 			},
-			"edge_name": &schema.Schema{
+			"name": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 				ForceNew: false,
@@ -75,57 +80,91 @@ func resourceNsxEdgeSGW() *schema.Resource {
 				Default:  "Created by Terraform",
 				ForceNew: false,
 			},
-			"mgmt_portgroup": &schema.Schema{
-				Type:     schema.TypeString,
+			"version": &schema.Schema{
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
+			"appliance": &schema.Schema{
+				Type:     schema.TypeSet,
 				Required: true,
 				ForceNew: false,
+				MinItems: 1,
+				MaxItems: 2,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"resource_pool_id": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: false,
+						},
+						"datastore_id": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: false,
+						},
+						"mgmt_interface": &schema.Schema{
+							Type:     schema.TypeList,
+							Optional: true,
+							ForceNew: false,
+							MinItems: 1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"portgroup": &schema.Schema{
+										Type:     schema.TypeString,
+										Required: true,
+										ForceNew: false,
+									},
+									"ip": &schema.Schema{
+										Type:         schema.TypeString,
+										Required:     true,
+										ForceNew:     false,
+										ValidateFunc: validateIP,
+									},
+									"mask": &schema.Schema{
+										Type:         schema.TypeString,
+										Required:     true,
+										ForceNew:     false,
+										ValidateFunc: validateIP,
+									},
+								},
+							},
+						},
+					},
+				},
 			},
-			//"mgmt_addr": &schema.Schema{
-			//	Type:     schema.TypeString,
-			//	Required: true,
-			//	ForceNew: false,
-			//},
 		},
 	}
 }
 
-func resourceNsxEdgeSGWCreate(d *schema.ResourceData, meta interface{}) error {
+func resourceNsxEdgeCreate(d *schema.ResourceData, meta interface{}) error {
 
-	sgw := NewNsxEdgeSGW(d)
+	edgeCfg := NewNsxEdge(d)
 
-	log.Printf("[INFO] Creating NSX Edge: %#v", sgw)
+	log.Printf("[INFO] Creating NSX Edge: %#v", edgeCfg)
 
 	client := meta.(*govnsx.Client)
 
-	edge := nsxresource.NewEdge(client) // TODO: what is common, newcommon. etc ?
+	edge := nsxresource.NewEdge(client)
 
-	var appliances = []nsxtypes.Appliance{nsxtypes.Appliance{
-		ResourcePoolId: sgw.resourcePoolId,
-		DatastoreId:    sgw.datastoreId,
-	}}
+	applianceList := []nsxtypes.Appliance{}
+	for _, value := range edgeCfg.appliances {
 
-	vnics := []nsxtypes.Vnic{}
-	//	addrGroups := []nsxtypes.AddressGroup{}
+		appliance := nsxtypes.Appliance{ResourcePoolId: value.resourcePoolId,
+			DatastoreId: value.datastoreId}
 
-	//	addrGroup := nsxtypes.AddressGroup{}
-	//	addrGroup.PrimaryAddress = sgw.mgmtAddr
-	//	addrGroups = append(addrGroups, addrGroup)
+		applianceList = append(applianceList, appliance)
+	}
 
-	vnic := nsxtypes.Vnic{}
-	vnic.Index = strconv.Itoa(0)
-	vnic.PortgroupId = sgw.mgmtPortgroup
-	//	vnic.AddressGroups = addrGroups
-	vnic.IsConnected = true
+	appliances := nsxtypes.Appliances{ApplianceSize: ApplianceSizeCompact,
+		DeployAppliances: false, AppliancesList: applianceList}
 
-	vnics = append(vnics, vnic)
-
-	edgeInstallSpec := &nsxtypes.EdgeSGWInstallSpec{
-		Name:           sgw.edgeName,
-		Datacenter:     sgw.datacenter,
-		Description:    sgw.description,
-		Tenant:         sgw.tenantId,
-		AppliancesList: appliances,
-		Vnics:          vnics,
+	edgeInstallSpec := &nsxtypes.EdgeInstallSpec{
+		Name:        edgeCfg.edgeName,
+		Type:        edgeCfg.edgeType,
+		Datacenter:  edgeCfg.datacenter,
+		Description: edgeCfg.description,
+		Tenant:      edgeCfg.tenantId,
+		Appliances:  appliances,
 	}
 
 	resp, err := edge.Post(edgeInstallSpec)
@@ -144,28 +183,21 @@ func resourceNsxEdgeSGWCreate(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
-func resourceNsxEdgeSGWRead(d *schema.ResourceData, meta interface{}) error {
-	// get edgeId d.getId
+func resourceNsxEdgeRead(d *schema.ResourceData, meta interface{}) error {
 
-	// issue Get edge
-
-	log.Printf("[INFO] Reading Nsx Edge SGW")
+	log.Printf("[INFO] Reading Nsx Edge ")
 	log.Printf("[WARN] Yet to be implemented")
 	return nil
 }
 
-func resourceNsxEdgeSGWUpdate(d *schema.ResourceData, meta interface{}) error {
+func resourceNsxEdgeUpdate(d *schema.ResourceData, meta interface{}) error {
 
-	// check if dhcp added Update edge vnic and configure dhcp for the new ip range
-
-	// dhcp param update TODO
-
-	log.Printf("[INFO] Updating Nsx Edge SGW")
+	log.Printf("[INFO] Updating Nsx Edge ")
 	log.Printf("[WARN] Yet to be implemented")
 	return nil
 }
 
-func resourceNsxEdgeSGWDelete(d *schema.ResourceData, meta interface{}) error {
+func resourceNsxEdgeDelete(d *schema.ResourceData, meta interface{}) error {
 
 	client := meta.(*govnsx.Client)
 	edge := nsxresource.NewEdge(client)
@@ -181,31 +213,55 @@ func resourceNsxEdgeSGWDelete(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
-func NewNsxEdgeSGW(d *schema.ResourceData) *edgeSGW {
+func NewNsxEdge(d *schema.ResourceData) *nsxEdge {
 
-	sgw := &edgeSGW{
-		datacenter:     d.Get("datacenter").(string),
-		resourcePoolId: d.Get("resource_pool_id").(string),
-		datastoreId:    d.Get("datastore_id").(string),
-		mgmtPortgroup:  d.Get("mgmt_portgroup").(string),
-		//mgmtAddr:       d.Get("mgmt_addr").(string),
+	edge := &nsxEdge{
+		datacenter: d.Get("datacenter").(string),
+		edgeType:   d.Get("type").(string),
 	}
 
 	if v, ok := d.GetOk("tenant_id"); ok {
-		sgw.tenantId = v.(string)
+		edge.tenantId = v.(string)
 	}
 
 	if v, ok := d.GetOk("folder"); ok {
-		sgw.folder = v.(string)
+		edge.folder = v.(string)
 	}
 
 	if v, ok := d.GetOk("description"); ok {
-		sgw.description = v.(string)
+		edge.description = v.(string)
 	}
 
 	if v, ok := d.GetOk("edge_name"); ok {
-		sgw.edgeName = v.(string)
+		edge.edgeName = v.(string)
 	}
 
-	return sgw
+	vL := d.Get("appliance")
+	if appSet, ok := vL.(*schema.Set); ok {
+
+		appCfgs := []applianceCfg{}
+		for _, value := range appSet.List() {
+
+			newAppliance := applianceCfg{}
+
+			appliance := value.(map[string]interface{})
+
+			newAppliance.resourcePoolId = appliance["resource_pool_id"].(string)
+			newAppliance.datastoreId = appliance["datastore_id"].(string)
+
+			if vL, ok = appliance["mgmt_interface"]; ok {
+
+				mgmt := (vL.([]interface{}))[0].(map[string]interface{})
+
+				newAppliance.mgmtInterface.portgroup = mgmt["portgroup"].(string)
+				newAppliance.mgmtInterface.ip = mgmt["ip"].(string)
+				newAppliance.mgmtInterface.mask = mgmt["mask"].(string)
+			}
+
+			appCfgs = append(appCfgs, newAppliance)
+		}
+		edge.appliances = appCfgs
+	}
+
+	return edge
 }

@@ -114,10 +114,10 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 
 	vnics = append(vnics, vnic)
 
-	edgeUpdateSpec := &nsxtypes.EdgeSGWInstallSpec{
-		Tenant:         edgeCfg.Tenant,
-		AppliancesList: edgeCfg.AppliancesList,
-		Vnics:          vnics,
+	edgeUpdateSpec := &nsxtypes.EdgeInstallSpec{
+		Tenant: edgeCfg.Tenant,
+		//AppliancesList: edgeCfg.AppliancesList,
+		Vnics: vnics,
 	}
 
 	err = edge.Put(edgeUpdateSpec, dhcp.edgeId)
