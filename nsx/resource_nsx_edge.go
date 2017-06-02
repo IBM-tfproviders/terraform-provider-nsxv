@@ -192,8 +192,43 @@ func resourceNsxEdgeRead(d *schema.ResourceData, meta interface{}) error {
 
 func resourceNsxEdgeUpdate(d *schema.ResourceData, meta interface{}) error {
 
-	log.Printf("[INFO] Updating Nsx Edge ")
-	log.Printf("[WARN] Yet to be implemented")
+	client := meta.(*govnsx.Client)
+	edge := nsxresource.NewEdge(client)
+
+	edgeId := d.Id()
+
+	retEdge, err :=edge.Get(edgeId)	
+
+
+	if err != nil {
+                return err
+        }
+
+	edgeInstallSpec := &nsxtypes.EdgeInstallSpec{
+                Name:        retEdge.Name,
+                Description: retEdge.Description,
+                Tenant:      retEdge.Tenant,
+                Appliances:  retEdge.Appliances,
+        }
+
+	if d.HasChange("name") {
+		_, v := d.GetChange("name")
+		edgeInstallSpec.Name = v.(string)
+		log.Printf("[INFO] Updating NsxEdge :name: %s", v)
+	}
+
+	if d.HasChange("description") {
+                _, v := d.GetChange("description")
+                edgeInstallSpec.Description = v.(string)
+                log.Printf("[INFO] Updating NsxEdge :description: %s", v)
+        }	
+
+	err = edge.Put(edgeInstallSpec, edgeId)	
+
+	if err != nil {
+                return err
+        } 
+
 	return nil
 }
 
