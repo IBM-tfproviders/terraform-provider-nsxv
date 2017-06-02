@@ -309,7 +309,6 @@ func parseAppliances(d *schema.ResourceData) appliances {
 
 		appliances := value.(map[string]interface{})
 
-		log.Printf("[INFO] KAVI appliances = %s", appliances)
 		newAppliances.applianceSize = appliances["size"].(string)
 
 		vL = appliances["appliance"]
@@ -320,7 +319,6 @@ func parseAppliances(d *schema.ResourceData) appliances {
 			newAppliance := applianceCfg{}
 
 			appliance := value.(map[string]interface{})
-			log.Printf("[INFO] KAVI appliance = %s", appliance)
 
 			newAppliance.resourcePoolId = appliance["resource_pool_id"].(string)
 			newAppliance.datastoreId = appliance["datastore_id"].(string)
@@ -380,7 +378,6 @@ func validateEdgeApplianceSize(v interface{}, k string) (ws []string, errors []e
 
 func createAppliancesSpec(appInfo appliances) nsxtypes.Appliances {
 
-	log.Printf("[INFO] KAVI appInfo = %s", appInfo)
 	applianceList := []nsxtypes.Appliance{}
 	for _, value := range appInfo.applianceList {
 
