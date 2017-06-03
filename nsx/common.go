@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -16,12 +17,12 @@ func validateCidr(v interface{}, k string) (ws []string, errors []error) {
 	ip, _, err := net.ParseCIDR(cidr)
 
 	if err != nil {
-		errors = append(errors, fmt.Errorf("%s: CIDR '%s' is not vlaid.",
+		errors = append(errors, fmt.Errorf("%s: CIDR '%s' is not valid.",
 			k, cidr))
 		return
 	}
 	if allowedIP := net.ParseIP(ip.String()); allowedIP == nil {
-		errors = append(errors, fmt.Errorf("%s: IP '%s' is not vlaid.",
+		errors = append(errors, fmt.Errorf("%s: IP '%s' is not valid.",
 			k, ip))
 	}
 
@@ -73,7 +74,7 @@ func validateIPRange(v interface{}, k string) (ws []string, errors []error) {
 		}
 
 	} else {
-		errors = append(errors, fmt.Errorf("%s: IP range '%s' is not vlaid.",
+		errors = append(errors, fmt.Errorf("%s: IP range '%s' is not valid.",
 			k, ipRange))
 	}
 
@@ -143,6 +144,50 @@ func isIPInCIDR(cidr string, ip string) bool {
 	return false
 }
 
-//func getIPRangeFromSubnet(netAddr, netMask string) (string, error) {
+func getIPRangeFromCIDR(cidr string) (ipRange, error) {
 
-//}
+	_, ipNet, _ := net.ParseCIDR(cidr)
+
+	elements := strings.Split(ipNet.String(), "/")
+
+	ip := ipToInt(ipNet.IP)
+
+	bits, _ := strconv.ParseUint(elements[1], 10, 64)
+
+	var mask int64
+	mask = ^(0xffffffff >> bits)
+
+	network := int64(ip) & mask
+	broadcast := network + ^mask
+
+	rangeVal := ipRange{}
+	if bits > 30 {
+		return rangeVal, fmt.Errorf("CIDR '%s' is not valid to configure IP Ranges.",
+			cidr)
+	} else {
+		startIP := network + 1
+		endIP := broadcast - 1
+
+		rangeVal = ipRange{intToIP(uint32(startIP)), intToIP(uint32(endIP))}
+	}
+
+	return rangeVal, nil
+}
+
+func removeGwAddrFromRange(rangeVal ipRange, gwIP net.IP) []ipRange {
+
+	retVal := []ipRange{}
+	if checkIPInRange(rangeVal, gwIP) {
+		if rangeVal.start.String() == gwIP.String() {
+			rangeVal.start = intToIP(ipToInt(rangeVal.start) + 1)
+			retVal = append(retVal, rangeVal)
+		} else {
+
+			retVal = []ipRange{ipRange{rangeVal.start, intToIP(ipToInt(gwIP) - 1)},
+				ipRange{intToIP(ipToInt(gwIP) + 1), rangeVal.end}}
+		}
+	} else {
+		retVal = append(retVal, rangeVal)
+	}
+	return retVal
+}

@@ -414,24 +414,39 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 				newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
 			} else if gwPresent {
 				// compute ip range from subnet
-				//ipRange, err := getIPRangeFromSubnet(dhcp.networkAddr, dhcp.netMask)
+				rangeVal, err := getIPRangeFromCIDR(newSubnet.cidr)
 
-				//dhcp.vnicAddr = start
-				// move start to 1 ip ahead and assign to ipRange TODO
-				//dhcp.ipRange = ipRange{startIP: start, endIP: end}
+				if err != nil {
+					return nil, err
+				}
+				//remove the gateway address from the range
+				rangeValCfgs := removeGwAddrFromRange(rangeVal, defaultGw)
+
+				newSubnet.vnicAddr = rangeValCfgs[0].start.String()
+				// move start to 1 ip ahead and assign to ipRange
+				rangeVal.start = intToIP(ipToInt(rangeValCfgs[0].start) + 1)
+				newSubnet.ipRangeList = rangeValCfgs
 			} else if ipRangePresent {
 				// compute gw from ip range
-				//dhcp.defaultGw = start.String()
-				//vnicIP := intToIP(ipToInt(start) + 1)
-				//dhcp.vnicAddr = vnicIP.String()
-				//startIP := intToIP(ipToInt(vnicIP) + 1)
-				// move start IP to 1 IP ahead and assign to ipRange
-				//dhcp.ipRange = ipRange{startIP: startIP.String(),
-				//endIP: end.String()}
-
+				newSubnet.defaultGw = newSubnet.ipRangeList[0].start.String()
+				vnicIP := intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
+				newSubnet.vnicAddr = vnicIP.String()
+				// move start ip to 2 ahead and assign it to ipRange
+				newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 2)
 			} else {
-				// compute gw from subnet
 				// compute ip range from subnet
+				rangeVal, err := getIPRangeFromCIDR(newSubnet.cidr)
+
+				if err != nil {
+					return nil, err
+				}
+				// compute gw from ip_range
+				newSubnet.defaultGw = rangeVal.start.String()
+
+				vnicIP := intToIP(ipToInt(rangeVal.start) + 1)
+				newSubnet.vnicAddr = vnicIP.String()
+				rangeVal.start = intToIP(ipToInt(rangeVal.start) + 2)
+				newSubnet.ipRangeList = append(newSubnet.ipRangeList, rangeVal)
 			}
 
 			subnetCfgs = append(subnetCfgs, newSubnet)
