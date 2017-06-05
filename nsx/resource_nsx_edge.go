@@ -50,12 +50,12 @@ func resourceNsxEdge() *schema.Resource {
 			"type": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: false,
+				ForceNew: true,
 			},
 			"datacenter": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: false,
+				ForceNew: true,
 			},
 			"tenant_id": &schema.Schema{
 				Type:     schema.TypeString,
@@ -84,6 +84,10 @@ func resourceNsxEdge() *schema.Resource {
 				Type:     schema.TypeInt,
 				Computed: true,
 			},
+			"edge_id": &schema.Schema{
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 			"appliance": &schema.Schema{
 				Type:     schema.TypeSet,
 				Required: true,
@@ -95,12 +99,12 @@ func resourceNsxEdge() *schema.Resource {
 						"resource_pool_id": &schema.Schema{
 							Type:     schema.TypeString,
 							Required: true,
-							ForceNew: false,
+							ForceNew: true,
 						},
 						"datastore_id": &schema.Schema{
 							Type:     schema.TypeString,
 							Required: true,
-							ForceNew: false,
+							ForceNew: true,
 						},
 						"mgmt_interface": &schema.Schema{
 							Type:     schema.TypeList,
@@ -176,17 +180,32 @@ func resourceNsxEdgeCreate(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[INFO] Created NSX Edge: %s", resp.EdgeId)
 
-	d.SetId(resp.EdgeId)
+	d.SetId(resp.Location)
+
+	err = d.Set("edge_id", resp.EdgeId)
 	if err != nil {
 		return fmt.Errorf("Invalid Edge id to set: %#v", resp.EdgeId)
 	}
-	return nil
+	return resourceNsxEdgeRead(d, meta)
 }
 
 func resourceNsxEdgeRead(d *schema.ResourceData, meta interface{}) error {
 
-	log.Printf("[INFO] Reading Nsx Edge ")
-	log.Printf("[WARN] Yet to be implemented")
+	client := meta.(*govnsx.Client)
+	edge_id := d.Get("edge_id").(string)
+
+	edge := nsxresource.NewEdge(client)
+
+	retEdge, err := edge.Get(edge_id)
+	if err != nil {
+		log.Printf("[Error] edge.Get() returned error : %v", err)
+		d.SetId("")
+		d.Set("edge_id", "")
+		return err
+	}
+
+	log.Printf("[Info] edge.Get() returned Edge: %v", retEdge)
+
 	return nil
 }
 
@@ -195,21 +214,20 @@ func resourceNsxEdgeUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*govnsx.Client)
 	edge := nsxresource.NewEdge(client)
 
-	edgeId := d.Id()
+	edgeId := d.Get("edge_id").(string)
 
-	retEdge, err :=edge.Get(edgeId)	
-
+	retEdge, err := edge.Get(edgeId)
 
 	if err != nil {
-                return err
-        }
+		return err
+	}
 
 	edgeInstallSpec := &nsxtypes.EdgeInstallSpec{
-                Name:        retEdge.Name,
-                Description: retEdge.Description,
-                Tenant:      retEdge.Tenant,
-                Appliances:  retEdge.Appliances,
-        }
+		Name:        retEdge.Name,
+		Description: retEdge.Description,
+		Tenant:      retEdge.Tenant,
+		Appliances:  retEdge.Appliances,
+	}
 
 	if d.HasChange("name") {
 		_, v := d.GetChange("name")
@@ -218,16 +236,16 @@ func resourceNsxEdgeUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if d.HasChange("description") {
-                _, v := d.GetChange("description")
-                edgeInstallSpec.Description = v.(string)
-                log.Printf("[INFO] Updating NsxEdge :description: %s", v)
-        }	
+		_, v := d.GetChange("description")
+		edgeInstallSpec.Description = v.(string)
+		log.Printf("[INFO] Updating NsxEdge :description: %s", v)
+	}
 
-	err = edge.Put(edgeInstallSpec, edgeId)	
+	err = edge.Put(edgeInstallSpec, edgeId)
 
 	if err != nil {
-                return err
-        } 
+		return err
+	}
 
 	return nil
 }
@@ -237,7 +255,7 @@ func resourceNsxEdgeDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*govnsx.Client)
 	edge := nsxresource.NewEdge(client)
 
-	edgeId := d.Id()
+	edgeId := d.Get("edge_id").(string)
 
 	log.Printf("[INFO] Deleting NSX Edge: %s", edgeId)
 	err := edge.Delete(edgeId)

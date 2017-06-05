@@ -65,7 +65,7 @@ func resourceNsxEdgeDHCP() *schema.Resource {
 			"edge_id": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: false,
+				ForceNew: true,
 			},
 		},
 	}
@@ -153,9 +153,10 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	d.SetId(dhcp.edgeId)
+
 	log.Printf("[INFO] Configured DHCP for NSX Edge: %s", dhcp.edgeId)
 
-	return nil
+	return resourceNsxEdgeDHCPRead(d, meta)
 }
 
 func resourceNsxEdgeDHCPRead(d *schema.ResourceData, meta interface{}) error {
