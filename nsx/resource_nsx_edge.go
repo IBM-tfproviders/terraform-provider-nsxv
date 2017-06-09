@@ -323,7 +323,7 @@ func parseAppliances(d *schema.ResourceData) appliances {
 			newAppliance.resourcePoolId = appliance["resource_pool_id"].(string)
 			newAppliance.datastoreId = appliance["datastore_id"].(string)
 
-			if vL, ok := appliance["mgmt_interface"]; ok {
+			if vL, ok := appliance["mgmt_interface"]; ok && vL != nil {
 
 				for _, value := range vL.([]interface{}) {
 

@@ -84,7 +84,6 @@ func resourceNsxEdgeDHCP() *schema.Resource {
 									"ip_pool": &schema.Schema{
 										Type:     schema.TypeList,
 										Optional: true,
-										MinItems: 1,
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
 												"ip_range": &schema.Schema{
@@ -122,7 +121,7 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 
 	client := meta.(*govnsx.Client)
 
-	// Get Edge details.
+	/* Get Edge details. */
 	edge := nsxresource.NewEdge(client)
 	edgeCfg, err := edge.Get(dhcp.edgeId)
 
@@ -131,10 +130,12 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	/* Loop through all the vnics from 0-9 of edge config.
-	   If the portgroup matches, add new address group for the
-	   existing vnic. Else create a new vnic for the portgroup.
-	   If all the vnics are configured, return err */
+	/*
+		    Loop through all the vnics from 0-9 of edge config.
+			If the portgroup matches, add new address group for the
+			existing vnic. Else create a new vnic for the portgroup.
+			If all the vnics are configured, return err
+	*/
 
 	pgFound := false
 	pgConfigDone := false
@@ -148,7 +149,7 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 				addrGroupFound := false
 				for _, subnetCfg := range portgroup.subnetList {
 
-					// If the subnet is already configured with vnic, ignore
+					/* If the subnet is already configured with vnic, ignore */
 					for _, addrGroupCfg := range vnic.AddressGroups {
 
 						if isIPInCIDR(subnetCfg.cidr, addrGroupCfg.PrimaryAddress) {
@@ -170,9 +171,9 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 			}
 		}
 		if !pgFound {
-			// configure a new vnic
+			/* configure a new vnic */
 			for i, vnic := range edgeCfg.Vnics {
-				// check IsConnected. If it is false, configure that vnic
+				/* check IsConnected. If it is false, configure that vnic */
 				if vnic.IsConnected == false {
 
 					pgConfigDone = true
@@ -193,12 +194,12 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 			}
 		}
 	}
-	// Not found any free Vnic, return err
+	/* Not found any free Vnic, return err */
 	if !pgFound && !pgConfigDone {
 		return fmt.Errorf("No vNic available to configure DHCP to the Edge '%s'", dhcp.edgeId)
 	}
 
-	// Deploy appliance to true
+	/* Deploy appliance to true */
 	edgeCfg.Appliances.DeployAppliances = true
 
 	edgeUpdateSpec := &nsxtypes.EdgeInstallSpec{
@@ -217,7 +218,7 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[INFO] Updated Edge '%s' for DHCP configuration", dhcp.edgeId)
 
-	// configure dhcp with the iprange and gw
+	/* configure dhcp with the iprange and gw */
 	ipPools := []nsxtypes.IPPool{}
 	for _, portgroup := range dhcp.portgroup {
 
@@ -260,7 +261,7 @@ func resourceNsxEdgeDHCPRead(d *schema.ResourceData, meta interface{}) error {
 
 	edgeId := d.Get("edge_id").(string)
 
-	// Get DHCP Config of edge
+	/* Get DHCP Config of edge */
 	edgeDHCP := nsxresource.NewEdgeDHCP(client)
 
 	dhcpCfg, err := edgeDHCP.Get(edgeId)
@@ -271,6 +272,7 @@ func resourceNsxEdgeDHCPRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
+	// set ip_range in d?
 	// set pool_id
 	//d.Set()
 
@@ -344,13 +346,13 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 			gwPresent := false
 			var defaultGw net.IP
 
-			if v, ok := subnet["default_gw"]; ok {
+			if v, ok := subnet["default_gw"]; ok && v != "" {
 				gwPresent = true
 				gw := v.(string)
 
 				defaultGw = net.ParseIP(gw)
 
-				// check if default gateway belongs to subnet
+				/* check if default gateway belongs to subnet */
 				if ipNet.Contains(defaultGw) {
 					newSubnet.defaultGw = gw
 				} else {
@@ -359,13 +361,12 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 				}
 			}
 
-			if raw, ok := subnet["ip_pool"]; ok {
-
-				ipRangePresent = true
+			if raw, ok := subnet["ip_pool"]; ok && raw != nil {
 
 				ipRangeCfgs := []ipRange{}
 				for _, value := range raw.([]interface{}) {
 
+					ipRangePresent = true
 					newIPRange := ipRange{}
 
 					ipPool := value.(map[string]interface{})
@@ -377,7 +378,7 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 					start := net.ParseIP(strings.TrimSpace(ip[0]))
 					end := net.ParseIP(strings.TrimSpace(ip[1]))
 
-					// check if ip range belongs to subnet
+					/* check if ip range belongs to subnet */
 					if ipNet.Contains(start) && ipNet.Contains(end) {
 						newIPRange = ipRange{start: start,
 							end: end}
@@ -387,7 +388,7 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 					}
 
 					if gwPresent {
-						// check default gw is not part of ip range
+						/* check default gw is not part of ip range */
 						if bytes.Compare(defaultGw, start) >= 0 && bytes.Compare(defaultGw, end) <= 0 {
 							return nil, fmt.Errorf("Default Gateway '%s' is part of IP Range %s.",
 								defaultGw, rangeValue)
@@ -397,8 +398,10 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 					ipRangeCfgs = append(ipRangeCfgs, newIPRange)
 				}
 
-				// Validate all the ip ranges for a subnet like overlapping, etc
-				// and sort the range
+				/*
+					                Validate all the ip ranges for a subnet like overlapping, etc
+									and sort the range
+				*/
 				retIPRange, err := validateAndSortIPRange(ipRangeCfgs)
 				if err != nil {
 					return nil, err
@@ -410,37 +413,37 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 			if ipRangePresent && gwPresent {
 
 				newSubnet.vnicAddr = newSubnet.ipRangeList[0].start.String()
-				// move start ip to 1 ahead and assign it to ipRange
+				/* move start ip to 1 ahead and assign it to ipRange */
 				newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
 			} else if gwPresent {
-				// compute ip range from subnet
+				/* compute ip range from subnet */
 				rangeVal, err := getIPRangeFromCIDR(newSubnet.cidr)
 
 				if err != nil {
 					return nil, err
 				}
-				//remove the gateway address from the range
+				/* remove the gateway address from the range */
 				rangeValCfgs := removeGwAddrFromRange(rangeVal, defaultGw)
 
 				newSubnet.vnicAddr = rangeValCfgs[0].start.String()
-				// move start to 1 ip ahead and assign to ipRange
-				rangeVal.start = intToIP(ipToInt(rangeValCfgs[0].start) + 1)
+				/* move start to 1 ip ahead and assign to ipRange */
+				rangeValCfgs[0].start = intToIP(ipToInt(rangeValCfgs[0].start) + 1)
 				newSubnet.ipRangeList = rangeValCfgs
 			} else if ipRangePresent {
-				// compute gw from ip range
+				/* compute gw from ip range */
 				newSubnet.defaultGw = newSubnet.ipRangeList[0].start.String()
 				vnicIP := intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
 				newSubnet.vnicAddr = vnicIP.String()
-				// move start ip to 2 ahead and assign it to ipRange
+				/* move start ip to 2 ahead and assign it to ipRange */
 				newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 2)
 			} else {
-				// compute ip range from subnet
+				/* compute ip range from subnet */
 				rangeVal, err := getIPRangeFromCIDR(newSubnet.cidr)
 
 				if err != nil {
 					return nil, err
 				}
-				// compute gw from ip_range
+				/* compute gw from ip_range */
 				newSubnet.defaultGw = rangeVal.start.String()
 
 				vnicIP := intToIP(ipToInt(rangeVal.start) + 1)

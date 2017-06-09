@@ -50,7 +50,7 @@ func validateIPRange(v interface{}, k string) (ws []string, errors []error) {
 	if match {
 		ip := strings.Split(strings.TrimSpace(ipRange), "-")
 
-		// Validate start ip
+		/* Validate start ip */
 		startIP := net.ParseIP(strings.TrimSpace(ip[0]))
 		if startIP == nil {
 			errors = append(errors, fmt.Errorf("%s: Start IP '%s' is not valid in range '%s'.",
@@ -58,7 +58,7 @@ func validateIPRange(v interface{}, k string) (ws []string, errors []error) {
 			return
 		}
 
-		// Validate end ip
+		/* Validate end ip */
 		endIP := net.ParseIP(strings.TrimSpace(ip[1]))
 		if endIP == nil {
 			errors = append(errors, fmt.Errorf("%s: End IP '%s' is not valid in range '%s'.",
@@ -66,7 +66,7 @@ func validateIPRange(v interface{}, k string) (ws []string, errors []error) {
 			return
 		}
 
-		// Validate the range of the start and end ip
+		/* Validate the range of the start and end ip */
 		if bytes.Compare(startIP, endIP) >= 0 {
 			errors = append(errors, fmt.Errorf(
 				"%s: Start IP '%s' is greater than End IP '%s' in the range %s.",
@@ -95,7 +95,7 @@ func validateAndSortIPRange(ipRangeCfgs []ipRange) ([]ipRange, error) {
 					getIPRangeString(r1), getIPRangeString(r2))
 			}
 
-			//if r1 > r2, swap
+			/* if r1 > r2, swap */
 			if ipToInt(r1.start) > ipToInt(r2.end) {
 				ipRangeCfgs[i] = r2
 				ipRangeCfgs[j] = r1
@@ -120,8 +120,9 @@ func intToIP(nn uint32) net.IP {
 }
 
 func checkIPInRange(rangeVal ipRange, ip net.IP) bool {
-	if bytes.Compare(ip, rangeVal.start) >= 0 &&
-		bytes.Compare(ip, rangeVal.end) <= 0 {
+
+	if (bytes.Compare(ip, rangeVal.start) >= 0) &&
+		(bytes.Compare(ip, rangeVal.end) <= 0) {
 		return true
 	}
 	return false
@@ -168,7 +169,9 @@ func getIPRangeFromCIDR(cidr string) (ipRange, error) {
 		startIP := network + 1
 		endIP := broadcast - 1
 
-		rangeVal = ipRange{intToIP(uint32(startIP)), intToIP(uint32(endIP))}
+		//rangeVal = ipRange{intToIP(uint32(startIP)), intToIP(uint32(endIP))}
+		rangeVal.start = intToIP(uint32(startIP))
+		rangeVal.end = intToIP(uint32(endIP))
 	}
 
 	return rangeVal, nil
@@ -177,17 +180,17 @@ func getIPRangeFromCIDR(cidr string) (ipRange, error) {
 func removeGwAddrFromRange(rangeVal ipRange, gwIP net.IP) []ipRange {
 
 	retVal := []ipRange{}
-	if checkIPInRange(rangeVal, gwIP) {
-		if rangeVal.start.String() == gwIP.String() {
-			rangeVal.start = intToIP(ipToInt(rangeVal.start) + 1)
-			retVal = append(retVal, rangeVal)
-		} else {
 
-			retVal = []ipRange{ipRange{rangeVal.start, intToIP(ipToInt(gwIP) - 1)},
-				ipRange{intToIP(ipToInt(gwIP) + 1), rangeVal.end}}
-		}
-	} else {
+	if rangeVal.start.String() == gwIP.String() {
+		rangeVal.start = intToIP(ipToInt(rangeVal.start) + 1)
 		retVal = append(retVal, rangeVal)
+	} else if rangeVal.end.String() == gwIP.String() {
+		rangeVal.end = intToIP(ipToInt(rangeVal.end) - 1)
+		retVal = append(retVal, rangeVal)
+	} else {
+		retVal = append(retVal, ipRange{rangeVal.start, intToIP(ipToInt(gwIP) - 1)})
+		retVal = append(retVal, ipRange{intToIP(ipToInt(gwIP) + 1), rangeVal.end})
 	}
+
 	return retVal
 }
