@@ -200,6 +200,7 @@ func resourceNsxEdgeDHCPRead(d *schema.ResourceData, meta interface{}) error {
 func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	edgeId := d.Get("edge_id").(string)
+
 	client := meta.(*govnsx.Client)
 
 	// Get Edge details.
@@ -244,6 +245,7 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 
 					subnetFound = true
 					if removedPg["name"].(string) != newName {
+
 						// delete vnic and add vnic with new portgroup
 						log.Printf("[DEBUG] Mofifying the portgroup name to %s", newName)
 
@@ -344,7 +346,7 @@ func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	//Should we remove the vnic details of edge as well? TODO
+	//remove the vnic details of edge as well
 
 	edge := nsxresource.NewEdge(client)
 	var edgeCfg *nsxtypes.Edge
@@ -359,7 +361,7 @@ func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
 		deleteVnic(portgroup, edgeCfg)
 	}
 
-	// Deploy appliance to true
+	// Deploy appliance to false
 	edgeCfg.Appliances.DeployAppliances = false
 
 	//update edge
@@ -516,7 +518,6 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 		}
 
 		// Validate all the ip ranges for a subnet and sort the range
-
 		var retIPRange []ipRange
 		if retIPRange, err = validateAndSortIPRange(ipRangeCfgs); err != nil {
 			return newSubnet, err
@@ -573,7 +574,7 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 func handleSubnetChange(addedPg map[string]interface{}, addedPgs, removedPgs *schema.Set,
 	edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool, edgeCfg *nsxtypes.Edge) error {
 
-	log.Printf("[DEBUG] Handling subnet changes")
+	log.Printf("[DEBUG] Handling subnet changes for the portgroup: %s", addedPg["name"].(string))
 
 	addedSubnetSet := addedPg["subnet"].(*schema.Set)
 
@@ -695,7 +696,7 @@ func handleSubnetChange(addedPg map[string]interface{}, addedPgs, removedPgs *sc
 						}
 
 						// Only ip Pool Changes and the same has been taken care above.
-						// Hence, remove addPg and removePg from the list
+						// Hence, remove addPg and removePg from the set
 						addedPgs.Remove(addedPg)
 						removedPgs.Remove(removedPg)
 
