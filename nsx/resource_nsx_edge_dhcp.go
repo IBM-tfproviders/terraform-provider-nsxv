@@ -54,14 +54,14 @@ func resourceNsxEdgeDHCP() *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
-			"portgroup": &schema.Schema{
+			"logical_switch": &schema.Schema{
 				Type:     schema.TypeSet,
 				Required: true,
 				MinItems: 1,
 				MaxItems: 10,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"name": &schema.Schema{
+						"id": &schema.Schema{
 							Type:     schema.TypeString,
 							Required: true,
 						},
@@ -98,6 +98,8 @@ func resourceNsxEdgeDHCP() *schema.Resource {
 
 func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 
+	log.Printf("[INFO] Creating NSX Edge DHCP")
+
 	dhcp, err := parseAndValidateResourceData(d)
 
 	if err != nil {
@@ -124,7 +126,7 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 
 	for _, portgroup := range dhcp.portgroups {
 
-		if err := addVnic(portgroup, edgeCfg); err != nil {
+		if err := configureEdgeVnic(portgroup, edgeCfg); err != nil {
 			return err
 		}
 	}
@@ -177,6 +179,8 @@ func resourceNsxEdgeDHCPCreate(d *schema.ResourceData, meta interface{}) error {
 
 func resourceNsxEdgeDHCPRead(d *schema.ResourceData, meta interface{}) error {
 
+	log.Printf("[INFO] Reading NSX Edge DHCP")
+
 	client := meta.(*govnsx.Client)
 
 	edgeId := d.Get("edge_id").(string)
@@ -198,6 +202,8 @@ func resourceNsxEdgeDHCPRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	log.Printf("[INFO] Updating NSX Edge DHCP")
 
 	edgeId := d.Get("edge_id").(string)
 
@@ -223,12 +229,12 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 		addedPgs := newPgSet.Difference(oldPgSet)
 		removedPgs := oldPgSet.Difference(newPgSet)
 
-		log.Printf("[DEBUG] added portgroups : %#v\n", addedPgs)
-		log.Printf("[DEBUG] removed portgroups : %#v\n", removedPgs)
+		log.Printf("[DEBUG] added logical switches  : %#v\n", addedPgs)
+		log.Printf("[DEBUG] removed logical switches : %#v\n", removedPgs)
 
 		for _, addedPgRaw := range addedPgs.List() {
 			addedPg, _ := addedPgRaw.(map[string]interface{})
-			newName := addedPg["name"].(string)
+			newName := addedPg["id"].(string)
 
 			addedSubnetSet := addedPg["subnet"].(*schema.Set)
 
@@ -244,10 +250,10 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 				if addedSubnetSet.Equal(removedSubnetSet) {
 
 					subnetFound = true
-					if removedPg["name"].(string) != newName {
+					if removedPg["id"].(string) != newName {
 
 						// delete vnic and add vnic with new portgroup
-						log.Printf("[DEBUG] Mofifying the portgroup name to %s", newName)
+						log.Printf("[DEBUG] Mofifying the logical switch id to %s", newName)
 
 						var portgroup pgCfg
 						if portgroup, err = parsePortgroup(removedPg); err != nil {
@@ -260,7 +266,7 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 							return err
 						}
 
-						if err := addVnic(portgroup, edgeCfg); err != nil {
+						if err := configureEdgeVnic(portgroup, edgeCfg); err != nil {
 							return err
 						}
 
@@ -278,14 +284,14 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 			}
 		}
 
-		log.Printf("[DEBUG] addedPgs after update: %#v\n", addedPgs)
-		log.Printf("[DEBUG] removedPgs after update: %#v\n", removedPgs)
+		log.Printf("[DEBUG] added logical switches after update: %#v\n", addedPgs)
+		log.Printf("[DEBUG] removed logical switches after update: %#v\n", removedPgs)
 
 		if len(removedPgs.List()) > 0 {
 
 			removedPortgroups, err := parsePortgroups(removedPgs)
 			if err != nil {
-				log.Printf("[ERROR] RemovedPgs Configuration validation failed.")
+				log.Printf("[ERROR] Removed logical switches Configuration validation failed.")
 				return err
 			}
 
@@ -300,12 +306,12 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 			addedPortgroups, err := parsePortgroups(addedPgs)
 
 			if err != nil {
-				log.Printf("[ERROR] AddedPgs Configuration validation failed.")
+				log.Printf("[ERROR] Added logical switches Configuration validation failed.")
 				return err
 			}
 
 			// add vnic, add ip pool
-			if err := addVnicAndIPPool(addedPgs, addedPortgroups, edgeDHCPIPPool, edgeCfg); err != nil {
+			if err := configureEdgeVnicAndIPPool(addedPgs, addedPortgroups, edgeDHCPIPPool, edgeCfg); err != nil {
 				return err
 			}
 		}
@@ -332,6 +338,8 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
+
+	log.Printf("[INFO] Deleting NSX Edge DHCP")
 
 	client := meta.(*govnsx.Client)
 	edgeDHCP := nsxresource.NewEdgeDHCP(client)
@@ -361,9 +369,6 @@ func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
 		deleteVnic(portgroup, edgeCfg)
 	}
 
-	// Deploy appliance to false
-	edgeCfg.Appliances.DeployAppliances = false
-
 	//update edge
 	if err = updateEdge(edge, edgeCfg); err != nil {
 		return err
@@ -380,7 +385,7 @@ func parseAndValidateResourceData(d *schema.ResourceData) (*dhcpCfg, error) {
 
 	var portgroupCfgs []pgCfg
 	var err error
-	if portgroupCfgs, err = parsePortgroups(d.Get("portgroup")); err != nil {
+	if portgroupCfgs, err = parsePortgroups(d.Get("logical_switch")); err != nil {
 		return nil, err
 	}
 
@@ -412,7 +417,7 @@ func parsePortgroup(pgVal map[string]interface{}) (pgCfg, error) {
 
 	newPortgroup := pgCfg{}
 
-	newPortgroup.portgroupName = pgVal["name"].(string)
+	newPortgroup.portgroupName = pgVal["id"].(string)
 
 	var subnets []subnet
 	var err error
@@ -459,7 +464,6 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 	newSubnet.netMask = fmt.Sprint(
 		ipNet.Mask[0], ".", ipNet.Mask[1], ".", ipNet.Mask[2], ".", ipNet.Mask[3])
 
-	ipRangePresent := false
 	gwPresent := false
 	var defaultGw net.IP
 
@@ -483,7 +487,6 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 		ipRangeCfgs := []ipRange{}
 		for _, value := range raw.([]interface{}) {
 
-			ipRangePresent = true
 			newIPRange := ipRange{}
 
 			if err = validateIPRange(value); err != nil {
@@ -524,49 +527,33 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 		}
 
 		newSubnet.ipRangeList = retIPRange
-	}
+	} else { // ip_pool not present
 
-	if ipRangePresent && gwPresent {
-
-		newSubnet.vnicAddr = newSubnet.ipRangeList[0].start.String()
-		// move start ip to 1 ahead and assign it to ipRange
-		newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
-	} else if gwPresent {
 		// compute ip range from subnet
 		var rangeVal ipRange
 		if rangeVal, err = getIPRangeFromCIDR(newSubnet.cidr); err != nil {
 			return newSubnet, err
 		}
+
+		newSubnet.ipRangeList = append(newSubnet.ipRangeList, rangeVal)
 
 		// remove the gateway address from the range
-		rangeValCfgs := removeGwAddrFromRange(rangeVal, defaultGw)
+		if gwPresent {
+			newSubnet.ipRangeList = removeGwAddrFromIPRange(rangeVal, defaultGw)
+		}
+	}
 
-		newSubnet.vnicAddr = rangeValCfgs[0].start.String()
-		// move start to 1 ip ahead and assign to ipRange
-		rangeValCfgs[0].start = intToIP(ipToInt(rangeValCfgs[0].start) + 1)
-		newSubnet.ipRangeList = rangeValCfgs
-	} else if ipRangePresent {
+	if !gwPresent {
 		// compute gw from ip range
 		newSubnet.defaultGw = newSubnet.ipRangeList[0].start.String()
-		vnicIP := intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
-		newSubnet.vnicAddr = vnicIP.String()
-		// move start ip to 2 ahead and assign it to ipRange
-		newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 2)
-	} else {
-		// compute ip range from subnet
-		var rangeVal ipRange
-		if rangeVal, err = getIPRangeFromCIDR(newSubnet.cidr); err != nil {
-			return newSubnet, err
-		}
 
-		// compute gw from ip_range
-		newSubnet.defaultGw = rangeVal.start.String()
-
-		vnicIP := intToIP(ipToInt(rangeVal.start) + 1)
-		newSubnet.vnicAddr = vnicIP.String()
-		rangeVal.start = intToIP(ipToInt(rangeVal.start) + 2)
-		newSubnet.ipRangeList = append(newSubnet.ipRangeList, rangeVal)
+		// move start ip to 1 ahead and assign it to ipRange
+		newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
 	}
+
+	newSubnet.vnicAddr = newSubnet.ipRangeList[0].start.String()
+	// move start ip to 1 ahead and assign it to ipRange
+	newSubnet.ipRangeList[0].start = intToIP(ipToInt(newSubnet.ipRangeList[0].start) + 1)
 
 	return newSubnet, nil
 }
@@ -574,7 +561,7 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 func handleSubnetChange(addedPg map[string]interface{}, addedPgs, removedPgs *schema.Set,
 	edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool, edgeCfg *nsxtypes.Edge) error {
 
-	log.Printf("[DEBUG] Handling subnet changes for the portgroup: %s", addedPg["name"].(string))
+	log.Printf("[DEBUG] Handling subnet changes for the logical switch: %s", addedPg["id"].(string))
 
 	addedSubnetSet := addedPg["subnet"].(*schema.Set)
 
@@ -611,7 +598,7 @@ func handleSubnetChange(addedPg map[string]interface{}, addedPgs, removedPgs *sc
 					log.Printf("[DEBUG] added subnet : %#v\n", addedSubnet)
 					log.Printf("[DEBUG] removed subnet : %#v\n", removedSubnet)
 
-					if addedPg["name"] == removedPg["name"] &&
+					if addedPg["id"] == removedPg["id"] &&
 						addedSubnet["cidr"] == removedSubnet["cidr"] {
 
 						// Modified gw
@@ -621,7 +608,7 @@ func handleSubnetChange(addedPg map[string]interface{}, addedPgs, removedPgs *sc
 								if addedGw != removedGw {
 
 									// delete ip_pool and add new ip_pool
-									log.Printf("[DEBUG]  Modified Gateway of the portgroup '%s'", addedPg["name"])
+									log.Printf("[DEBUG]  Modified Gateway of the logical switch '%s'", addedPg["id"])
 
 									parseRemovedSubnet, _ := parseSubnet(removedSubnet)
 									if err := deleteIPPool([]subnet{parseRemovedSubnet}, edgeDHCPIPPool, edgeCfg); err != nil {
@@ -684,7 +671,6 @@ func handleSubnetChange(addedPg map[string]interface{}, addedPgs, removedPgs *sc
 							}
 						}
 
-						log.Printf("[DEBUG] len(addedIPPoolRaw.([]interface{})) : %#v\n", len(addedIPPoolRaw.([]interface{})))
 						if len(addedIPPoolRaw.([]interface{})) > 0 {
 
 							// add new ip_pool
@@ -747,7 +733,7 @@ func updateEdge(edge *nsxresource.Edge, edgeCfg *nsxtypes.Edge) error {
 	return nil
 }
 
-func addVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) error {
+func configureEdgeVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) error {
 
 	pgFound := false
 	pgConfigDone := false
@@ -853,11 +839,11 @@ func deleteVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) {
 
 	// Not found any configured Vnic,
 	if !pgFound {
-		log.Printf("[INFO] No vNic is configured for the portgroup '%s' to remove from the Edge '%s'", edgeCfg.Id)
+		log.Printf("[INFO] No vNic is configured for the logical switch '%s' to remove from the Edge '%s'", edgeCfg.Id)
 	}
 }
 
-func addVnicAndIPPool(addedPgs *schema.Set, portgroups []pgCfg, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool,
+func configureEdgeVnicAndIPPool(addedPgs *schema.Set, portgroups []pgCfg, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool,
 	edgeCfg *nsxtypes.Edge) error {
 
 	for _, addedPgRaw := range addedPgs.List() {
@@ -865,9 +851,9 @@ func addVnicAndIPPool(addedPgs *schema.Set, portgroups []pgCfg, edgeDHCPIPPool *
 
 		for _, portgroup := range portgroups {
 
-			if portgroup.portgroupName == addedPg["name"].(string) {
+			if portgroup.portgroupName == addedPg["id"].(string) {
 
-				if err := addVnic(portgroup, edgeCfg); err != nil {
+				if err := configureEdgeVnic(portgroup, edgeCfg); err != nil {
 					return err
 				}
 
@@ -892,7 +878,7 @@ func removeVnicAndIPPool(removedPgs *schema.Set, portgroups []pgCfg, edgeDHCPIPP
 
 			if len(portgroup.subnetList) > 0 {
 
-				if portgroup.portgroupName == removedPg["name"].(string) {
+				if portgroup.portgroupName == removedPg["id"].(string) {
 
 					deleteVnic(portgroup, edgeCfg)
 
