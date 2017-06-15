@@ -14,7 +14,7 @@ func Provider() terraform.ResourceProvider {
 			"user": &schema.Schema{
 				Type:        schema.TypeString,
 				Required:    true,
-				DefaultFunc: schema.EnvDefaultFunc("NSX_USER", nil),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_USER", nil),
 				Description: "The user name for NSX API operations.",
 			},
 
@@ -22,42 +22,42 @@ func Provider() terraform.ResourceProvider {
 				Type:        schema.TypeString,
 				Required:    true,
 				Sensitive:   true,
-				DefaultFunc: schema.EnvDefaultFunc("NSX_PASSWORD", nil),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_PASSWORD", nil),
 				Description: "The user password for NSX API operations.",
 			},
 
 			"nsx_manager_uri": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("NSX_MANAGER_URI", nil),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_MANAGER_URI", nil),
 				Description: "The NSX Manager URI for API operations.",
 			},
 
 			"allow_unverified_ssl": &schema.Schema{
 				Type:        schema.TypeBool,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("NSX_ALLOW_UNVERIFIED_SSL", false),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_ALLOW_UNVERIFIED_SSL", false),
 				Description: "If set, NSX client will permit unverifiable SSL certificates.",
 			},
 
 			"client_debug": &schema.Schema{
 				Type:        schema.TypeBool,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("NSX_CLIENT_DEBUG", false),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_CLIENT_DEBUG", false),
 				Description: "govnsx debug",
 			},
 
 			"client_debug_path_run": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("NSX_CLIENT_DEBUG_PATH_RUN", ""),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_CLIENT_DEBUG_PATH_RUN", ""),
 				Description: "govnsx debug path for a single run",
 			},
 
 			"client_debug_path": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("NSX_CLIENT_DEBUG_PATH", ""),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_CLIENT_DEBUG_PATH", ""),
 				Description: "govnsx debug path for debug",
 			},
 
@@ -65,7 +65,7 @@ func Provider() terraform.ResourceProvider {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Default:     "Terraform-Nsx-Provider",
-				Description: "NSX Clinet user agent name",
+				Description: "NSX client user agent name",
 			},
 		},
 

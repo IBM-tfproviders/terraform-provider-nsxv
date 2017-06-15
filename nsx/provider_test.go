@@ -30,15 +30,15 @@ func TestProvider_impl(t *testing.T) {
 }
 
 func testAccPreCheck(t *testing.T) {
-	if v := os.Getenv("NSX_USER"); v == "" {
-		t.Fatal("NSX_USER must be set for acceptance tests")
+	if v := os.Getenv("NSXV_USER"); v == "" {
+		t.Fatal("NSXV_USER must be set for acceptance tests")
 	}
 
-	if v := os.Getenv("NSX_PASSWORD"); v == "" {
-		t.Fatal("NSX_PASSWORD must be set for acceptance tests")
+	if v := os.Getenv("NSXV_PASSWORD"); v == "" {
+		t.Fatal("NSXV_PASSWORD must be set for acceptance tests")
 	}
 
-	if v := os.Getenv("NSX_MANAGER_URI"); v == "" {
-		t.Fatal("NSX_MANAGER_URI must be set for acceptance tests")
+	if v := os.Getenv("NSXV_MANAGER_URI"); v == "" {
+		t.Fatal("NSXV_MANAGER_URI must be set for acceptance tests")
 	}
 }
