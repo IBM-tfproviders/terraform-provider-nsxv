@@ -40,6 +40,13 @@ func validateIP(v interface{}, k string) (ws []string, errors []error) {
 	return
 }
 
+func validateType(v interface{}, k string) (ws []string, errors []error) {
+
+        // TBD 
+        return
+}       
+
+
 func validateIPRange(v interface{}, k string) (ws []string, errors []error) {
 
 	ipRange := v.(string)
