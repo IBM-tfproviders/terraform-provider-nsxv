@@ -40,7 +40,7 @@ func validateIP(v interface{}, k string) (ws []string, errors []error) {
 	return
 }
 
-func validateIPRange(v interface{}, k string) (ws []string, errors []error) {
+func validateIPRange(v interface{}) error {
 
 	ipRange := v.(string)
 
@@ -50,35 +50,33 @@ func validateIPRange(v interface{}, k string) (ws []string, errors []error) {
 	if match {
 		ip := strings.Split(strings.TrimSpace(ipRange), "-")
 
-		/* Validate start ip */
+		// Validate start ip
 		startIP := net.ParseIP(strings.TrimSpace(ip[0]))
 		if startIP == nil {
-			errors = append(errors, fmt.Errorf("%s: Start IP '%s' is not valid in range '%s'.",
-				k, ip[0], ipRange))
-			return
+			return fmt.Errorf("Start IP '%s' is not valid in range '%s'.",
+				ip[0], ipRange)
 		}
 
-		/* Validate end ip */
+		// Validate end ip
 		endIP := net.ParseIP(strings.TrimSpace(ip[1]))
 		if endIP == nil {
-			errors = append(errors, fmt.Errorf("%s: End IP '%s' is not valid in range '%s'.",
-				k, ip[1], ipRange))
-			return
+			return fmt.Errorf("End IP '%s' is not valid in range '%s'.",
+				ip[1], ipRange)
 		}
 
-		/* Validate the range of the start and end ip */
+		// Validate the range of the start and end ip
 		if bytes.Compare(startIP, endIP) >= 0 {
-			errors = append(errors, fmt.Errorf(
-				"%s: Start IP '%s' is greater than End IP '%s' in the range %s.",
-				k, startIP, endIP, ipRange))
+			return fmt.Errorf(
+				"Start IP '%s' is greater than End IP '%s' in the range %s.",
+				startIP, endIP, ipRange)
 		}
 
 	} else {
-		errors = append(errors, fmt.Errorf("%s: IP range '%s' is not valid.",
-			k, ipRange))
+		return fmt.Errorf("IP range '%s' is not valid.",
+			ipRange)
 	}
 
-	return
+	return nil
 }
 
 func validateAndSortIPRange(ipRangeCfgs []ipRange) ([]ipRange, error) {
@@ -95,7 +93,7 @@ func validateAndSortIPRange(ipRangeCfgs []ipRange) ([]ipRange, error) {
 					getIPRangeString(r1), getIPRangeString(r2))
 			}
 
-			/* if r1 > r2, swap */
+			// if r1 > r2, swap
 			if ipToInt(r1.start) > ipToInt(r2.end) {
 				ipRangeCfgs[i] = r2
 				ipRangeCfgs[j] = r1
