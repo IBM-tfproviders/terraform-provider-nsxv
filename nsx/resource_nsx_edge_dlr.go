@@ -7,11 +7,19 @@ import (
 	"github.com/IBM-tfproviders/govnsx/nsxtypes"
 	"github.com/hashicorp/terraform/helper/schema"
 	"log"
+	"strings"
 )
 
 const (
 	DLRResourceIdPrefix = "dlr-"
+	InterfaceTypeInternal = "internal"
+	InterfaceTypeUplink = "uplink"
 )
+
+var interfaceTypesList = []string{
+        string(InterfaceTypeInternal),
+        string(InterfaceTypeUplink),
+}
 
 type ifCfg struct {
 	name              string
@@ -38,6 +46,10 @@ func resourceNsxEdgeDLR() *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
+			"type" :&schema.Schema{
+                                Type:     schema.TypeString,
+				Computed: true,
+                        },
 			"interface": &schema.Schema{
 				Type:     schema.TypeList,
 				Required: true,
@@ -56,19 +68,19 @@ func resourceNsxEdgeDLR() *schema.Resource {
 						"ip": &schema.Schema{
 							Type:         schema.TypeString,
 							Required:     true,
-							ForceNew:     true,
+							ForceNew:     false,
 							ValidateFunc: validateIP,
 						},
 						"mask": &schema.Schema{
 							Type:         schema.TypeString,
 							Required:     true,
-							ForceNew:     true,
+							ForceNew:     false,
 							ValidateFunc: validateIP,
 						},
 						"logical_switch_id": &schema.Schema{
 							Type:     schema.TypeString,
 							Required: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 					},
 				},
@@ -78,7 +90,7 @@ func resourceNsxEdgeDLR() *schema.Resource {
 }
 
 func resourceNsxEdgeDLRInterfaceCreate(d *schema.ResourceData, meta interface{}) error {
-	dlr, err := parseAndValidateDLRResourceData(d)
+	dlr, err := parseAndValidateDLRResourceData(d, meta)
 	if err != nil {
 		log.Printf("[ERROR] Configuration validation failed.")
 		return err
@@ -161,7 +173,23 @@ func resourceNsxEdgeDLRInterfaceDelete(d *schema.ResourceData, meta interface{})
 	return nil
 }
 
-func parseAndValidateDLRResourceData(d *schema.ResourceData) (*dlrCfg, error) {
+func parseAndValidateDLRResourceData(d *schema.ResourceData, meta interface{}) (*dlrCfg, error) {
+
+	edgeType, err := getEdgeType(d.Get("edge_id").(string), meta)
+	
+	if err != nil {
+		return nil, err
+	}
+
+        if edgeType != EdgeTypeDistributedRouter {
+               log.Printf("[ERROR] Edge type is not ", EdgeTypeDistributedRouter)
+		err := fmt.Errorf(
+			"[ERROR] Only Edge type %s is supported for this operation", 
+			EdgeTypeDistributedRouter)
+		return nil, err
+        }
+
+	d.Set("type", EdgeTypeDistributedRouter)
 
 	dlr := &dlrCfg{
 		edgeId: d.Get("edge_id").(string),
@@ -183,4 +211,22 @@ func parseAndValidateDLRResourceData(d *schema.ResourceData) (*dlrCfg, error) {
 	}
 	dlr.ifCfgList = ifCfgs
 	return dlr, nil
+}
+
+func validateInterfaceType(v interface{}, k string) (ws []string, errors []error) {
+	value := v.(string)
+        found := false
+	
+	for _, t := range interfaceTypesList {
+                if t == value {
+                        found = true
+                }
+        }
+
+	if !found {
+                errors = append(errors, fmt.Errorf(
+                        "%s: Supported values are %s", k, strings.Join(interfaceTypesList, ", ")))
+        }
+
+        return
 }
