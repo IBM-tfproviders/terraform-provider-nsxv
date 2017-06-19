@@ -220,9 +220,9 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	edgeDHCPIPPool := nsxresource.NewEdgeDHCPIPPool(client)
 
-	if d.HasChange("portgroup") {
+	if d.HasChange("logical_switch") {
 
-		oldPg, newPg := d.GetChange("portgroup")
+		oldPg, newPg := d.GetChange("logical_switch")
 		oldPgSet := oldPg.(*schema.Set)
 		newPgSet := newPg.(*schema.Set)
 
@@ -234,11 +234,9 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 
 		for _, addedPgRaw := range addedPgs.List() {
 			addedPg, _ := addedPgRaw.(map[string]interface{})
-			newName := addedPg["id"].(string)
 
 			addedSubnetSet := addedPg["subnet"].(*schema.Set)
 
-			subnetFound := false
 			for _, removedPgRaw := range removedPgs.List() {
 				removedPg, _ := removedPgRaw.(map[string]interface{})
 
@@ -247,48 +245,97 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 				log.Printf("[DEBUG] addedSubnetSet : %#v\n", addedSubnetSet)
 				log.Printf("[DEBUG] removedSubnetSet : %#v\n", removedSubnetSet)
 
-				if addedSubnetSet.Equal(removedSubnetSet) {
+				if !addedSubnetSet.Equal(removedSubnetSet) {
 
-					subnetFound = true
-					if removedPg["id"].(string) != newName {
+					// if the subnet is added or removed, the same subnet is added in
+					// the other list too. eg, if we add a new subnet inside a pg,
+					// the addedPg will have 2 subnets(old & new) and the removedPg
+					// will have 1 subnet(old). Hence, removing the common one from both
+					//addedSubnets and RemoveSubnets
 
-						// delete vnic and add vnic with new portgroup
-						log.Printf("[DEBUG] Mofifying the logical switch id to %s", newName)
+					commonSubnetSet := addedSubnetSet.Intersection(removedSubnetSet)
 
-						var portgroup pgCfg
-						if portgroup, err = parsePortgroup(removedPg); err != nil {
-							return err
+					log.Printf("[DEBUG] common subnets : %#v\n", commonSubnetSet)
+
+					for _, commonSubnetsRaw := range commonSubnetSet.List() {
+						commonSubnet, _ := commonSubnetsRaw.(map[string]interface{})
+						log.Printf("[DEBUG] Subnet is same.. removing from addedSubnetSet & removedSubnetSet")
+						addedSubnetSet.Remove(commonSubnet)
+						removedSubnetSet.Remove(commonSubnet)
+					}
+
+					if (len(addedSubnetSet.List()) > 0) && (len(removedSubnetSet.List()) > 0) {
+
+						for _, addedSubnetsRaw := range addedSubnetSet.List() {
+							addedSubnet, _ := addedSubnetsRaw.(map[string]interface{})
+
+							for _, removedSubnetsRaw := range removedSubnetSet.List() {
+								removedSubnet, _ := removedSubnetsRaw.(map[string]interface{})
+
+								log.Printf("[DEBUG] Added Subnet : %#v\n", addedSubnet)
+								log.Printf("[DEBUG] Removed Subnet : %#v\n", removedSubnet)
+
+								if addedPg["id"] == removedPg["id"] &&
+									addedSubnet["cidr"] == removedSubnet["cidr"] {
+
+									var addedGw, removedGw string
+									if v, ok := addedSubnet["default_gw"]; ok {
+										addedGw = v.(string)
+									}
+									if v, ok := removedSubnet["default_gw"]; ok {
+										removedGw = v.(string)
+									}
+									var addedIPPoolRaw, removedIPPoolRaw interface{}
+									if v, ok := addedSubnet["ip_pool"]; ok {
+										addedIPPoolRaw = v
+									}
+									if v, ok := removedSubnet["ip_pool"]; ok {
+										removedIPPoolRaw = v
+									}
+
+									// Modified gw
+									if (addedGw != removedGw) || (len(addedIPPoolRaw.([]interface{})) !=
+										len(removedIPPoolRaw.([]interface{}))) {
+
+										// delete ip_pool and add new ip_pool
+										log.Printf("[DEBUG] Modified Gateway IP or the IP Pool of the Logical Switch '%s'", addedPg["id"])
+
+										parseRemovedSubnet, _ := parseSubnet(removedSubnet)
+										if err := deleteIPPool(parseRemovedSubnet, edgeDHCPIPPool, edgeCfg); err != nil {
+											return err
+										}
+										parseAddedSubnet, _ := parseSubnet(addedSubnet)
+										if err := addIPPool(parseAddedSubnet, edgeDHCPIPPool, edgeCfg); err != nil {
+											return err
+										}
+									}
+
+									// Only ip Pool Changes and the same has been taken care above.
+									// Hence, remove the addedSubnet and removedSubnet from the set
+									addedSubnetSet.Remove(addedSubnet)
+									removedSubnetSet.Remove(removedSubnet)
+								}
+							}
 						}
-
-						reconfigureEdgeVnic(portgroup, edgeCfg)
-
-						if portgroup, err = parsePortgroup(addedPg); err != nil {
-							return err
-						}
-
-						if err := configureEdgeVnic(portgroup, edgeCfg); err != nil {
-							return err
-						}
-
+					}
+					// if Subnet list is empty, remove the pg from the set
+					if len(addedSubnetSet.List()) <= 0 {
 						addedPgs.Remove(addedPg)
+					}
+					if len(removedSubnetSet.List()) <= 0 {
 						removedPgs.Remove(removedPg)
 					}
-					break
-				}
-			}
-			// check for subnet changes
-			if subnetFound == false {
-				if err := handleSubnetChange(addedPg, addedPgs, removedPgs, edgeDHCPIPPool, edgeCfg); err != nil {
-					return err
 				}
 			}
 		}
 
-		log.Printf("[DEBUG] added logical switches after update: %#v\n", addedPgs)
-		log.Printf("[DEBUG] removed logical switches after update: %#v\n", removedPgs)
+		updateEdgeNeeded := false
+		log.Printf("[DEBUG] Added Logical Switches after update: %#v\n", addedPgs)
+		log.Printf("[DEBUG] Removed Logical Switches after update: %#v\n", removedPgs)
 
 		if len(removedPgs.List()) > 0 {
 
+			updateEdgeNeeded = true
 			removedPortgroups, err := parsePortgroups(removedPgs)
 			if err != nil {
 				log.Printf("[ERROR] Removed logical switches Configuration validation failed.")
@@ -303,6 +350,7 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 
 		if len(addedPgs.List()) > 0 {
 
+			updateEdgeNeeded = true
 			addedPortgroups, err := parsePortgroups(addedPgs)
 
 			if err != nil {
@@ -316,21 +364,24 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 			}
 		}
 
-		// get DHCP configs and set it to Features
-		edgeDHCP := nsxresource.NewEdgeDHCP(client)
-		edgeDHCPConfig, err := edgeDHCP.Get(edgeId)
+		if updateEdgeNeeded == true {
 
-		if err != nil {
-			log.Printf("[ERROR] Retriving Edge DHCP configuration '%s' failed with error : '%v'", edgeId, err)
-			return err
-		}
+			// get DHCP configs and set it to Features
+			edgeDHCP := nsxresource.NewEdgeDHCP(client)
+			edgeDHCPConfig, err := edgeDHCP.Get(edgeId)
 
-		log.Printf("[DEBUG] Edge '%s'  : '%s'", edgeCfg, edgeId)
+			if err != nil {
+				log.Printf("[ERROR] Retriving Edge DHCP configuration '%s' failed with error : '%v'", edgeId, err)
+				return err
+			}
 
-		edgeCfg.Features.Dhcp = *edgeDHCPConfig
-		//update edge
-		if err = updateEdge(edge, edgeCfg); err != nil {
-			return err
+			log.Printf("[DEBUG] Edge '%s'  : '%s'", edgeCfg, edgeId)
+
+			edgeCfg.Features.Dhcp = *edgeDHCPConfig
+			//update edge
+			if err = updateEdge(edge, edgeCfg); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -343,11 +394,11 @@ func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
 
 	client := meta.(*govnsx.Client)
 
-     edgeId := d.Get("edge_id").(string)
+	edgeId := d.Get("edge_id").(string)
 
 	//remove the vnic details of edge as well
 	edge := nsxresource.NewEdge(client)
-    var err error
+	var err error
 	var edgeCfg *nsxtypes.Edge
 	if edgeCfg, err = getEdge(edge, edgeId); err != nil {
 		return err
@@ -361,12 +412,15 @@ func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
 
 		reconfigureEdgeVnic(portgroup, edgeCfg)
 
-		if err := deleteIPPool(portgroup.subnetList, edgeDHCPIPPool, edgeCfg); err != nil {
-    		return err
-        }
+		for _, subnet := range portgroup.subnetList {
+
+			if err := deleteIPPool(subnet, edgeDHCPIPPool, edgeCfg); err != nil {
+				return err
+			}
+		}
 	}
 
-    // get DHCP configs and set it to Features
+	// get DHCP configs and set it to Features
 	edgeDHCP := nsxresource.NewEdgeDHCP(client)
 	edgeDHCPConfig, err := edgeDHCP.Get(edgeId)
 
@@ -567,145 +621,6 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 	return newSubnet, nil
 }
 
-func handleSubnetChange(addedPg map[string]interface{}, addedPgs, removedPgs *schema.Set,
-	edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool, edgeCfg *nsxtypes.Edge) error {
-
-	log.Printf("[DEBUG] Handling subnet changes for the logical switch: %s", addedPg["id"].(string))
-
-	addedSubnetSet := addedPg["subnet"].(*schema.Set)
-
-	for _, removedPgRaw := range removedPgs.List() {
-		removedPg, _ := removedPgRaw.(map[string]interface{})
-
-		removedSubnetSet := removedPg["subnet"].(*schema.Set)
-
-		// if the subnet is added or removed, the same subnet is added in
-		// the other list too. eg, if we add a new subnet inside a pg,
-		// the addedPg will have 2 subnets(old & new) and the removedPg
-		// will have 1 subnet(old). Hence, removing the common one from both
-		//addedSubnets and RemoveSubnets
-
-		commonSubnetSet := addedSubnetSet.Intersection(removedSubnetSet)
-
-		log.Printf("[DEBUG] common subnets : %#v\n", commonSubnetSet)
-
-		for _, commonSubnetsRaw := range commonSubnetSet.List() {
-			commonSubnet, _ := commonSubnetsRaw.(map[string]interface{})
-			log.Printf("[DEBUG] subnet is same.. removing from add & remove")
-			addedSubnetSet.Remove(commonSubnet)
-			removedSubnetSet.Remove(commonSubnet)
-		}
-
-		if (len(addedSubnetSet.List()) > 0) && (len(removedSubnetSet.List()) > 0) {
-
-			for _, addedSubnetsRaw := range addedSubnetSet.List() {
-				addedSubnet, _ := addedSubnetsRaw.(map[string]interface{})
-
-				for _, removedSubnetsRaw := range removedSubnetSet.List() {
-					removedSubnet, _ := removedSubnetsRaw.(map[string]interface{})
-
-					log.Printf("[DEBUG] added subnet : %#v\n", addedSubnet)
-					log.Printf("[DEBUG] removed subnet : %#v\n", removedSubnet)
-
-					if addedPg["id"] == removedPg["id"] &&
-						addedSubnet["cidr"] == removedSubnet["cidr"] {
-
-						// Modified gw
-						if addedGw, ok := addedSubnet["default_gw"]; ok {
-							if removedGw, ok := removedSubnet["default_gw"]; ok {
-
-								if addedGw != removedGw {
-
-									// delete ip_pool and add new ip_pool
-									log.Printf("[DEBUG]  Modified Gateway of the logical switch '%s'", addedPg["id"])
-
-									parseRemovedSubnet, _ := parseSubnet(removedSubnet)
-									if err := deleteIPPool([]subnet{parseRemovedSubnet}, edgeDHCPIPPool, edgeCfg); err != nil {
-										return err
-									}
-									parseAddedSubnet, _ := parseSubnet(addedSubnet)
-									if err := addIPPool([]subnet{parseAddedSubnet}, edgeDHCPIPPool, edgeCfg.Id); err != nil {
-										return err
-									}
-									break
-								}
-							}
-						}
-
-						log.Printf("[DEBUG] Added Subnet IP Pools : %#v", addedSubnet["ip_pool"])
-						log.Printf("[DEBUG] Removed Subnet IP Pools : %#v", removedSubnet["ip_pool"])
-
-						var addedIPPoolRaw, removedIPPoolRaw interface{}
-						if v, ok := addedSubnet["ip_pool"]; ok {
-							addedIPPoolRaw = v
-						}
-						if v, ok := removedSubnet["ip_pool"]; ok {
-							removedIPPoolRaw = v
-						}
-
-						if len(addedIPPoolRaw.([]interface{})) > 0 &&
-							len(removedIPPoolRaw.([]interface{})) > 0 {
-
-							for addKey, value := range addedIPPoolRaw.([]interface{}) {
-								addedIPPool, _ := value.(string)
-
-								for removeKey, value := range removedIPPoolRaw.([]interface{}) {
-									removedIPPool, _ := value.(string)
-
-									// check and remove the common ip pools between added and removed
-									if addedIPPool == removedIPPool {
-										// IP Pool is same.. removing from add & remove
-										log.Printf("[DEBUG] ip pool '%s' is same. Removing from addList and removeList", addedIPPool)
-										addedIPPoolRaw = removeFromSlice(addedIPPoolRaw.([]interface{}), addKey)
-										removedIPPoolRaw = removeFromSlice(removedIPPoolRaw.([]interface{}), removeKey)
-
-										break
-									}
-								}
-								log.Printf("[DEBUG] Added IP Pool after update : %#v\n", addedIPPoolRaw)
-								log.Printf("[DEBUG] removed IP Pool after update : %#v\n", removedIPPoolRaw)
-							}
-						}
-
-						addedSubnet["ip_pool"] = addedIPPoolRaw
-						removedSubnet["ip_pool"] = removedIPPoolRaw
-
-						if len(removedIPPoolRaw.([]interface{})) > 0 {
-
-							// delete ip_pool
-							parseRemovedSubnet, _ := parseSubnet(removedSubnet)
-
-							if err := deleteIPPool([]subnet{parseRemovedSubnet}, edgeDHCPIPPool, edgeCfg); err != nil {
-								return err
-							}
-						}
-
-						if len(addedIPPoolRaw.([]interface{})) > 0 {
-
-							// add new ip_pool
-							parseAddedSubnet, _ := parseSubnet(addedSubnet)
-
-							if err := addIPPool([]subnet{parseAddedSubnet}, edgeDHCPIPPool, edgeCfg.Id); err != nil {
-								return err
-							}
-						}
-
-						// Only ip Pool Changes and the same has been taken care above.
-						// Hence, remove addPg and removePg from the set
-						addedPgs.Remove(addedPg)
-						removedPgs.Remove(removedPg)
-
-						break
-					}
-				}
-				// cidr will not match.. So have to add new vnic and ip pool.
-				// this will be taken care by the caller of this method
-			}
-		}
-	}
-	return nil
-}
-
 func getEdge(edge *nsxresource.Edge, edgeId string) (*nsxtypes.Edge, error) {
 
 	// Get Edge details
@@ -831,8 +746,8 @@ func reconfigureEdgeVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) {
 
 						edgeCfg.Vnics[i].AddressGroups = edgeCfg.Vnics[i].AddressGroups[:len(
 							edgeCfg.Vnics[i].AddressGroups)-1]
-					    log.Printf("[DEBUG] Reconfiguring the Vnic '%d' with the Address Group '%#v' of the Edge %s.",
-						    i, addrGroupCfg, edgeCfg.Id)
+						log.Printf("[DEBUG] Reconfiguring the Vnic '%d' with the Address Group '%#v' for the Logical Switch '%s' of the Edge %s.",
+							i, addrGroupCfg, vnic.PortgroupId, edgeCfg.Id)
 						break
 					}
 				}
@@ -846,6 +761,22 @@ func reconfigureEdgeVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) {
 			}
 			break
 		}
+	}
+
+	// check all the vnics. If all are not configured, set
+	// Deploy appliance to false. If none of the vnics are configured
+	// and DeployAppliances = true,  edge update will fail.
+	foundVnicConfig := false
+	for _, vnic := range edgeCfg.Vnics {
+
+		if vnic.IsConnected {
+			foundVnicConfig = true
+			break
+		}
+	}
+
+	if foundVnicConfig == false {
+		edgeCfg.Appliances.DeployAppliances = false
 	}
 
 	// Not found any configured Vnic,
@@ -869,8 +800,11 @@ func configureEdgeVnicAndIPPool(addedPgs *schema.Set, portgroups []pgCfg, edgeDH
 				}
 
 				// add ip_pool
-				if err := addIPPool(portgroup.subnetList, edgeDHCPIPPool, edgeCfg.Id); err != nil {
-					return err
+				for _, subnet := range portgroup.subnetList {
+
+					if err := addIPPool(subnet, edgeDHCPIPPool, edgeCfg); err != nil {
+						return err
+					}
 				}
 				break
 			}
@@ -887,85 +821,74 @@ func reconfigureEdgeVnicAndIPPool(removedPgs *schema.Set, portgroups []pgCfg, ed
 
 		for _, portgroup := range portgroups {
 
-			if len(portgroup.subnetList) > 0 {
+			if portgroup.portgroupName == removedPg["id"].(string) {
 
-				if portgroup.portgroupName == removedPg["id"].(string) {
+				reconfigureEdgeVnic(portgroup, edgeCfg)
 
-					reconfigureEdgeVnic(portgroup, edgeCfg)
+				// delete ip_pool
 
-					// delete ip_pool
+				for _, subnet := range portgroup.subnetList {
 
-					if err := deleteIPPool(portgroup.subnetList, edgeDHCPIPPool, edgeCfg); err != nil {
+					if err := deleteIPPool(subnet, edgeDHCPIPPool, edgeCfg); err != nil {
 						return err
 					}
-					break
 				}
+				break
 			}
 		}
 	}
 	return nil
 }
 
-func addIPPool(subnets []subnet, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool, edgeId string) error {
+func addIPPool(subnet subnet, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool, edgeCfg *nsxtypes.Edge) error {
 
-	for _, subnet := range subnets {
+	for _, ipRangeVal := range subnet.ipRangeList {
 
-		for _, ipRangeVal := range subnet.ipRangeList {
+		ipPoolSpec := &nsxtypes.IPPool{}
 
-			ipPoolSpec := &nsxtypes.IPPool{}
+		ipPoolSpec.IPRange = getIPRangeString(ipRangeVal)
+		ipPoolSpec.DefaultGw = subnet.defaultGw
+		ipPoolSpec.SubnetMask = subnet.netMask
 
-			ipPoolSpec.IPRange = getIPRangeString(ipRangeVal)
-			ipPoolSpec.DefaultGw = subnet.defaultGw
-			ipPoolSpec.SubnetMask = subnet.netMask
+		log.Printf("[INFO] Adding DHCP IP Pool '%v' to Edge '%s'",
+			ipPoolSpec, edgeCfg.Id)
 
-			log.Printf("[INFO] Adding DHCP IP Pool '%v' to Edge '%s'",
-				ipPoolSpec, edgeId)
+		_, err := edgeDHCPIPPool.Post(ipPoolSpec, edgeCfg.Id)
 
-			_, err := edgeDHCPIPPool.Post(ipPoolSpec, edgeId)
-
-			if err != nil {
-				log.Printf("[ERROR] Adding DHCP IP Pool to Edge '%s' failed with error : '%v'",
-					edgeId, err)
-				return err
-			}
+		if err != nil {
+			log.Printf("[ERROR] Adding DHCP IP Pool to Edge '%s' failed with error : '%v'",
+				edgeCfg.Id, err)
+			return err
 		}
 	}
 
 	return nil
 }
 
-func deleteIPPool(subnets []subnet, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool, edgeCfg *nsxtypes.Edge) error {
+func deleteIPPool(subnet subnet, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool, edgeCfg *nsxtypes.Edge) error {
 
-	for _, subnet := range subnets {
+	for _, value := range subnet.ipRangeList {
 
-		for _, value := range subnet.ipRangeList {
+		ipRangeVal := getIPRangeString(value)
 
-			for _, dhcpIPPool := range edgeCfg.Features.Dhcp.IPPools {
+		for _, dhcpIPPool := range edgeCfg.Features.Dhcp.IPPools {
 
-				ipRangeVal := getIPRangeString(value)
+			if ipRangeVal == dhcpIPPool.IPRange {
 
-				if ipRangeVal == dhcpIPPool.IPRange {
+				log.Printf("[INFO] Deleting DHCP IP Pool '%s' from Edge '%s'",
+					ipRangeVal, edgeCfg.Id)
 
-					log.Printf("[INFO] Deleting DHCP IP Pool '%s' from Edge '%s'",
-						ipRangeVal, edgeCfg.Id)
+				err := edgeDHCPIPPool.Delete(edgeCfg.Id, dhcpIPPool.PoolId)
 
-					err := edgeDHCPIPPool.Delete(edgeCfg.Id, dhcpIPPool.PoolId)
+				if err != nil {
+					log.Printf("[ERROR] Deleting DHCP IP Pool from Edge '%s' failed with error : '%v'",
+						edgeCfg.Id, err)
 
-					if err != nil {
-						log.Printf("[ERROR] Deleting DHCP IP Pool from Edge '%s' failed with error : '%v'",
-							edgeCfg.Id, err)
-
-						return err
-					}
-					break
+					return err
 				}
+				break
 			}
 		}
 	}
 	return nil
-}
-
-func removeFromSlice(s []interface{}, i int) []interface{} {
-	s[i] = s[len(s)-1]
-	return s[:len(s)-1]
 }
