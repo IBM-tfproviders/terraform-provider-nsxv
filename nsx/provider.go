@@ -73,6 +73,7 @@ func Provider() terraform.ResourceProvider {
 			"nsxv_logical_switch": resourceLogicalSwitch(),
 			"nsxv_edge":           resourceNsxEdge(),
 			"nsxv_edge_dhcp":      resourceNsxEdgeDHCP(),
+			"nsxv_edge_dlr":       resourceNsxEdgeDLR(),
 		},
 
 		ConfigureFunc: providerConfigure,

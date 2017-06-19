@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/IBM-tfproviders/govnsx"
+	"github.com/IBM-tfproviders/govnsx/nsxresource"
 	"net"
 	"regexp"
 	"strconv"
@@ -191,4 +193,19 @@ func removeGwAddrFromRange(rangeVal ipRange, gwIP net.IP) []ipRange {
 	}
 
 	return retVal
+}
+
+func getEdgeType(edgeId string, meta interface{}) (string, error) {
+
+	client := meta.(*govnsx.Client)
+	edge := nsxresource.NewEdge(client)
+
+	retEdge, err := edge.Get(edgeId)
+	if err != nil {
+		return "", err
+	}
+
+	edgeType := retEdge.Type
+
+	return edgeType, nil
 }
