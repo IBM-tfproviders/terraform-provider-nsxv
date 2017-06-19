@@ -90,6 +90,30 @@ func resourceNsxEdgeDLR() *schema.Resource {
 }
 
 func resourceNsxEdgeDLRInterfaceCreate(d *schema.ResourceData, meta interface{}) error {
+
+	var edgeType string
+	var err error
+	
+	if v, ok := d.GetOk("type"); ok {
+
+		edgeType = v.(string)
+	
+	} else {
+		edgeType, err = getEdgeType(d.Get("edge_id").(string), meta)
+
+		if err != nil {
+			log.Printf("[ERROR] Unable to read Edge type %s", err)
+			return err
+		}
+	}
+
+	if edgeType != EdgeTypeDistributedRouter {
+		log.Printf("[ERROR] Edge type is not ", EdgeTypeDistributedRouter)
+		err := fmt.Errorf("[ERROR] Only Edge type %s is supported for this operation",
+			EdgeTypeDistributedRouter)
+			return err
+	}
+	
 	dlr, err := parseAndValidateDLRResourceData(d, meta)
 	if err != nil {
 		log.Printf("[ERROR] Configuration validation failed.")
@@ -142,6 +166,35 @@ func resourceNsxEdgeDLRInterfaceRead(d *schema.ResourceData, meta interface{}) e
 
 	edgeId := d.Get("edge_id").(string)
 
+	if v, ok := d.GetOk("type"); ok {
+
+		edgeType := v.(string)
+
+		if edgeType != EdgeTypeDistributedRouter {
+			log.Printf("[ERROR] Edge type is not ", EdgeTypeDistributedRouter)
+			err := fmt.Errorf("[ERROR] Only Edge type %s is supported for this operation",
+				EdgeTypeDistributedRouter)
+			return err
+		}
+	} else {
+
+		edgeType, err := getEdgeType(d.Get("edge_id").(string), meta)
+        
+		if err != nil {
+			log.Printf("[ERROR] Unable to read Edge type %s", err)
+			return err
+		}
+        
+		if edgeType != EdgeTypeDistributedRouter {
+			log.Printf("[ERROR] Edge type is not ", EdgeTypeDistributedRouter) 
+			err := fmt.Errorf("[ERROR] Only Edge type %s is supported for this operation",
+			EdgeTypeDistributedRouter)
+			return err
+		}
+
+		d.Set("type", EdgeTypeDistributedRouter)
+       }
+
 	log.Printf("[INFO] Read NSX Edge Router Interface: ", edgeId)
 	_, err := dlrInterfaces.Get(edgeId)
 
@@ -174,22 +227,6 @@ func resourceNsxEdgeDLRInterfaceDelete(d *schema.ResourceData, meta interface{})
 }
 
 func parseAndValidateDLRResourceData(d *schema.ResourceData, meta interface{}) (*dlrCfg, error) {
-
-	edgeType, err := getEdgeType(d.Get("edge_id").(string), meta)
-	
-	if err != nil {
-		return nil, err
-	}
-
-        if edgeType != EdgeTypeDistributedRouter {
-               log.Printf("[ERROR] Edge type is not ", EdgeTypeDistributedRouter)
-		err := fmt.Errorf(
-			"[ERROR] Only Edge type %s is supported for this operation", 
-			EdgeTypeDistributedRouter)
-		return nil, err
-        }
-
-	d.Set("type", EdgeTypeDistributedRouter)
 
 	dlr := &dlrCfg{
 		edgeId: d.Get("edge_id").(string),
