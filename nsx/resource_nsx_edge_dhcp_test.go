@@ -1,15 +1,18 @@
 package nsx
 
 import (
-	//"fmt"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
-	//"github.com/hashicorp/terraform/helper/resource"
-	//"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform/helper/resource"
+	"github.com/hashicorp/terraform/terraform"
+	"github.com/IBM-tfproviders/govnsx"
+	"github.com/IBM-tfproviders/govnsx/nsxresource"
+	//"github.com/IBM-tfproviders/govnsx/nsxtypes"
 )
 
 var (
@@ -18,23 +21,67 @@ var (
 )
 
 const (
+
+    cidr1 = "1.2.3.0/24"
+    defaultGw1 = "1.2.3.1"
+    ipRange1 = "1.2.3.2-1.2.3.50"
+
+    cidr2 = "4.3.2.0/24"
+    defaultGw2 = "4.3.2.1"
+    ipRange2 = "4.3.2.2-4.3.2.50"
+
 	testAccCheckEdgeDhcpConf_min = `
 resource "nsxv_edge_dhcp" "%s" {
     edge_id = "%s"
-    portgroup_name = "%s"
-    cidr = "%s"
+
+    logical_switch {
+        id = "%s",
+
+        subnet {
+            cidr = "%s"
+        }
+    }
 }
 `
-	testAccCheckEdgeDhcpConf = `
+	testAccCheckEdgeDhcpConf_full = `
 resource "nsxv_edge_dhcp" "%s" {
     edge_id = "%s"
-    portgroup_name = "%s"
-    cidr = "%s"
-    default_gw = "%s"
-    ip_pool = "%s"
+
+    logical_switch {
+        id = "%s"
+            
+         subnet {
+            cidr = "%s"
+            default_gw = "%s"
+            ip_pool = ["%s"]
+        }
+    }
+}
+`
+
+	testAccCheckEdgeDhcpConf_2subnets = `
+resource "nsxv_edge_dhcp" "%s" {
+    edge_id = "%s"
+
+    logical_switch {
+        id = "%s"
+
+        subnet {
+            cidr = "%s"
+            default_gw = "%s"
+            ip_pool = ["%s"]
+        }
+
+        subnet {
+            cidr = "%s"
+            default_gw = "%s"
+            ip_pool = ["%s"]
+        }
+    }
 }
 `
 )
+
 
 func TestAccNsxEdgeDHCP_ValidatorFunc(t *testing.T) {
 	var validatorCases = []attributeValueValidationTestSpec{
@@ -210,6 +257,103 @@ func TestAccNsxEdgeDHCP_ParseSubnet(t *testing.T) {
 			t.Fatalf("Parsing subnet failed : Expected value '%v' is not found.", data.expectedSubnet)
 		}
 	}
+}
+
+func TestAccNsxEdgeDHCP_Create(t *testing.T) {
+
+    dhcpName := "TFT_DEFAULT"
+    resourceName := "nsxv_edge_dhcp." + dhcpName
+
+	config := fmt.Sprintf(testAccCheckEdgeDhcpConf_min, dhcpName, edgeId, lsId, cidr1)
+	log.Printf("[DEBUG] template config= %s", config)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheckEdgeDHCP(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckEdgeDHCPDestroy,
+		Steps: []resource.TestStep{
+			resource.TestStep{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						resourceName, "edge_id", edgeId),
+				),
+			},
+		},
+	})
+}
+
+func TestAccNsxEdgeDHCP_UpdateAddSubnet(t *testing.T) {
+
+    dhcpName := "TFT_DEFAULT"
+    resourceName := "nsxv_edge_dhcp." + dhcpName
+
+	config := fmt.Sprintf(testAccCheckEdgeDhcpConf_full, dhcpName, edgeId, lsId, cidr1, 
+            defaultGw1, ipRange1)
+	log.Printf("[DEBUG] template config= %s", config)
+
+	configUpdate := fmt.Sprintf(testAccCheckEdgeDhcpConf_2subnets, dhcpName, edgeId, lsId, cidr1, 
+            defaultGw1, ipRange1, cidr2, defaultGw2, ipRange2)
+	log.Printf("[DEBUG] template configUpdate= %s", configUpdate)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheckEdgeDHCP(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckEdgeDHCPDestroy,
+		Steps: []resource.TestStep{
+			resource.TestStep{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						resourceName, "edge_id", edgeId),
+				),
+			},
+            resource.TestStep{
+				Config: configUpdate,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						resourceName, "edge_id", edgeId),
+				),
+			},
+		},
+	})
+}
+
+func testAccCheckEdgeDHCPDestroy(s *terraform.State) error {
+
+	client := testAccProvider.Meta().(*govnsx.Client)
+
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "nsxv_edge_dhcp" {
+			continue
+		}
+
+       // get DHCP configs and verify
+    	edgeDHCP := nsxresource.NewEdgeDHCP(client)
+	    edgeDHCPConfig, err := edgeDHCP.Get(edgeId)
+
+   	    if err != nil {
+        	return fmt.Errorf("Getting DHCP Config for Edge %s failed with error: %v", edgeId, err)
+   	    } else {
+    	    if edgeDHCPConfig != nil {
+
+                for _, dhcpIPPool := range edgeDHCPConfig.IPPools {
+                    
+                    ipRangeVal := strings.Split(dhcpIPPool.IPRange, "-")
+			        if isIPInCIDR(cidr1, ipRangeVal[0]) || isIPInCIDR(cidr1, ipRangeVal[1]) || 
+                        isIPInCIDR(cidr2, ipRangeVal[0]) || isIPInCIDR(cidr2, ipRangeVal[1]) {
+                 
+                        return fmt.Errorf("DHCP Config for Edge %s still exists", edgeId)
+                    }
+                }
+        	} else {
+		        log.Printf("DHCP Config for Edge %s already deleted.", edgeId)
+        	   	return nil
+	       	}
+    	}
+    }
+
+	return nil
 }
 
 func createSubnetTestData(cidr string, gwIP string, ipPool []string) map[string]interface{} {

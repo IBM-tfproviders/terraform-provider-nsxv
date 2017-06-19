@@ -260,7 +260,7 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 							return err
 						}
 
-						deleteVnic(portgroup, edgeCfg)
+						reconfigureEdgeVnic(portgroup, edgeCfg)
 
 						if portgroup, err = parsePortgroup(addedPg); err != nil {
 							return err
@@ -296,7 +296,7 @@ func resourceNsxEdgeDHCPUpdate(d *schema.ResourceData, meta interface{}) error {
 			}
 
 			// delete vnic, delete ip pool
-			if err := removeVnicAndIPPool(removedPgs, removedPortgroups, edgeDHCPIPPool, edgeCfg); err != nil {
+			if err := reconfigureEdgeVnicAndIPPool(removedPgs, removedPortgroups, edgeDHCPIPPool, edgeCfg); err != nil {
 				return err
 			}
 		}
@@ -342,21 +342,12 @@ func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[INFO] Deleting NSX Edge DHCP")
 
 	client := meta.(*govnsx.Client)
-	edgeDHCP := nsxresource.NewEdgeDHCP(client)
 
-	edgeId := d.Get("edge_id").(string)
-
-	log.Printf("[INFO] Deleting DHCP configuration from Edge: '%s'", edgeId)
-	err := edgeDHCP.Delete(edgeId)
-	if err != nil {
-		log.Printf("[ERROR] Deleting DHCP configuration from Edge '%s' failed with error : '%v'",
-			edgeId, err)
-		return err
-	}
+     edgeId := d.Get("edge_id").(string)
 
 	//remove the vnic details of edge as well
-
 	edge := nsxresource.NewEdge(client)
+    var err error
 	var edgeCfg *nsxtypes.Edge
 	if edgeCfg, err = getEdge(edge, edgeId); err != nil {
 		return err
@@ -364,10 +355,27 @@ func resourceNsxEdgeDHCPDelete(d *schema.ResourceData, meta interface{}) error {
 
 	dhcp, _ := parseAndValidateResourceData(d)
 
+	edgeDHCPIPPool := nsxresource.NewEdgeDHCPIPPool(client)
+
 	for _, portgroup := range dhcp.portgroups {
 
-		deleteVnic(portgroup, edgeCfg)
+		reconfigureEdgeVnic(portgroup, edgeCfg)
+
+		if err := deleteIPPool(portgroup.subnetList, edgeDHCPIPPool, edgeCfg); err != nil {
+    		return err
+        }
 	}
+
+    // get DHCP configs and set it to Features
+	edgeDHCP := nsxresource.NewEdgeDHCP(client)
+	edgeDHCPConfig, err := edgeDHCP.Get(edgeId)
+
+	if err != nil {
+		log.Printf("[ERROR] Retriving Edge DHCP configuration '%s' failed with error : '%v'", edgeId, err)
+		return err
+	}
+
+	edgeCfg.Features.Dhcp = *edgeDHCPConfig
 
 	//update edge
 	if err = updateEdge(edge, edgeCfg); err != nil {
@@ -482,7 +490,7 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 		}
 	}
 
-	if raw, ok := subnetVal["ip_pool"]; ok && raw != nil {
+	if raw, ok := subnetVal["ip_pool"]; ok && len(raw.([]interface{})) > 0 {
 
 		ipRangeCfgs := []ipRange{}
 		for _, value := range raw.([]interface{}) {
@@ -544,6 +552,7 @@ func parseSubnet(subnetVal map[string]interface{}) (subnet, error) {
 	}
 
 	if !gwPresent {
+
 		// compute gw from ip range
 		newSubnet.defaultGw = newSubnet.ipRangeList[0].start.String()
 
@@ -762,8 +771,8 @@ func configureEdgeVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) error {
 
 					edgeCfg.Vnics[i].AddressGroups = append(
 						edgeCfg.Vnics[i].AddressGroups, addrGroup)
-					log.Printf("[DEBUG] Adding Vnic config '%#v' to Edge %s. Adding addressgroup",
-						edgeCfg.Vnics[i], edgeCfg.Id)
+					log.Printf("[DEBUG] Configuring an existing Vnic '%d' with the Address Group '%#v' of the Edge %s.",
+						i, addrGroup, edgeCfg.Id)
 				}
 			}
 			break
@@ -788,8 +797,8 @@ func configureEdgeVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) error {
 
 					edgeCfg.Vnics[i].AddressGroups = append(
 						edgeCfg.Vnics[i].AddressGroups, addrGroup)
-					log.Printf("[DEBUG] Adding Vnic config '%#v' to Edge %s. Configuring a new vnic",
-						edgeCfg.Vnics[i], edgeCfg.Id)
+					log.Printf("[DEBUG] Configuring a NEW Vnic '%d' with the Address Group '%#v' of the Edge %s.",
+						i, edgeCfg.Vnics[i], edgeCfg.Id)
 				}
 				break
 			}
@@ -803,7 +812,7 @@ func configureEdgeVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) error {
 	return nil
 }
 
-func deleteVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) {
+func reconfigureEdgeVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) {
 
 	pgFound := false
 
@@ -822,6 +831,8 @@ func deleteVnic(portgroup pgCfg, edgeCfg *nsxtypes.Edge) {
 
 						edgeCfg.Vnics[i].AddressGroups = edgeCfg.Vnics[i].AddressGroups[:len(
 							edgeCfg.Vnics[i].AddressGroups)-1]
+					    log.Printf("[DEBUG] Reconfiguring the Vnic '%d' with the Address Group '%#v' of the Edge %s.",
+						    i, addrGroupCfg, edgeCfg.Id)
 						break
 					}
 				}
@@ -868,7 +879,7 @@ func configureEdgeVnicAndIPPool(addedPgs *schema.Set, portgroups []pgCfg, edgeDH
 	return nil
 }
 
-func removeVnicAndIPPool(removedPgs *schema.Set, portgroups []pgCfg, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool,
+func reconfigureEdgeVnicAndIPPool(removedPgs *schema.Set, portgroups []pgCfg, edgeDHCPIPPool *nsxresource.EdgeDHCPIPPool,
 	edgeCfg *nsxtypes.Edge) error {
 
 	for _, removedPgRaw := range removedPgs.List() {
@@ -880,7 +891,7 @@ func removeVnicAndIPPool(removedPgs *schema.Set, portgroups []pgCfg, edgeDHCPIPP
 
 				if portgroup.portgroupName == removedPg["id"].(string) {
 
-					deleteVnic(portgroup, edgeCfg)
+					reconfigureEdgeVnic(portgroup, edgeCfg)
 
 					// delete ip_pool
 
