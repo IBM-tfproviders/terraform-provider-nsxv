@@ -69,7 +69,7 @@ func validateIPRange(v interface{}) error {
 		// Validate the range of the start and end ip
 		if bytes.Compare(startIP, endIP) >= 0 {
 			return fmt.Errorf(
-				"Start IP '%s' is greater than End IP '%s' in the range %s.",
+				"Start IP '%s' needs to be smaller than End IP '%s' in the range %s.",
 				startIP, endIP, ipRange)
 		}
 
@@ -89,7 +89,7 @@ func validateAndSortIPRange(ipRangeCfgs []ipRange) ([]ipRange, error) {
 			r1 := ipRangeCfgs[i]
 			r2 := ipRangeCfgs[j]
 
-			if checkIPInRange(r1, r2.start) && checkIPInRange(r1, r2.end) {
+			if checkIPInRange(r1, r2.start) || checkIPInRange(r1, r2.end) {
 
 				return nil, fmt.Errorf("Overlapping IP Ranges '%s' and '%s'",
 					getIPRangeString(r1), getIPRangeString(r2))
@@ -177,7 +177,7 @@ func getIPRangeFromCIDR(cidr string) (ipRange, error) {
 	return rangeVal, nil
 }
 
-func removeGwAddrFromRange(rangeVal ipRange, gwIP net.IP) []ipRange {
+func removeGwAddrFromIPRange(rangeVal ipRange, gwIP net.IP) []ipRange {
 
 	retVal := []ipRange{}
 

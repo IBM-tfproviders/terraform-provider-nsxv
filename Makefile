@@ -39,6 +39,9 @@ terraform-checkout:
 build:
 	go build -ldflags ${LD_FLAGS} -o $(PROVIDER_NAME) github.com/IBM-tfproviders/terraform-provider-nsxv
 
+testacc:
+	@echo "Starting Acceptance Test..."
+	TF_ACC=1 go test ./nsx -v $(TESTARGS) -timeout 120m
 
 fmt:
 	echo "Running fmt ..."
