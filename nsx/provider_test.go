@@ -38,7 +38,7 @@ func testAccPreCheck(t *testing.T) {
 		t.Fatal("NSXV_PASSWORD must be set for acceptance tests")
 	}
 
-	if v := os.Getenv("NSXV_MANAGER_URI"); v == "" {
-		t.Fatal("NSXV_MANAGER_URI must be set for acceptance tests")
+	if v := os.Getenv("NSXV_NSX_MANAGER_URI"); v == "" {
+		t.Fatal("NSXV_NSX_MANAGER_URI must be set for acceptance tests")
 	}
 }
