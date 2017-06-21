@@ -1,1 +1,1 @@
-# vmware-nsx
+# Terraform Provider for NSXv
