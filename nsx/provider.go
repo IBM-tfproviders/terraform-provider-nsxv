@@ -29,7 +29,7 @@ func Provider() terraform.ResourceProvider {
 			"nsx_manager_uri": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("NSXV_MANAGER_URI", nil),
+				DefaultFunc: schema.EnvDefaultFunc("NSXV_NSX_MANAGER_URI", nil),
 				Description: "The NSX Manager URI for API operations.",
 			},
 
