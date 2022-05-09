@@ -22,6 +22,8 @@ For more details on how to rebuild govnsx see [govnsx readme file](https://githu
 
 ## Steps to rebuild this provider
 
+Before rebuilding this, you should rebuild [govnsx](https://github.com/IBM-tfproviders/govnsx).
+
 - export GOPATH=<YOUR_GO_PATH>
 - export GO_BIN_LOCATION=<YOUR_GO_BIN_PATH>
 - export NSXV_VERSION=1.0.2
