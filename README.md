@@ -30,5 +30,5 @@ Before rebuilding this, you should rebuild [govnsx](https://github.com/IBM-tfpro
 - mkdir -p $GOPATH/src/github.com/IBM-tfproviders
 - git clone -b $NSXV_VERSION https://github.com/IBM-tfproviders/terraform-provider-nsxv
 - cd $GOPATH/src/github.com/IBM-tfproviders/terraform-provider-nsxv
-- $GO_BIN_LOCATION mod tidy
-- $GO_BIN_LOCATION install
+- $GO_BIN_LOCATION/go mod tidy
+- $GO_BIN_LOCATION/go install
