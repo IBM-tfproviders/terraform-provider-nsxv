@@ -3,7 +3,7 @@ module github.com/IBM-tfproviders/terraform-provider-nsxv
 go 1.17
 
 require (
-        github.com/IBM-tfproviders/govnsx v0.0.0-00010101000000-000000000000
+        github.com/IBM-tfproviders/govnsx v1.0.2
         github.com/hashicorp/terraform v0.14.11
 )
 
