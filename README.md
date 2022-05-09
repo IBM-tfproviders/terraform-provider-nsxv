@@ -26,9 +26,9 @@ Before rebuilding this, you should rebuild [govnsx](https://github.com/IBM-tfpro
 
 - export GOPATH=<YOUR_GO_PATH>
 - export GO_BIN_LOCATION=<YOUR_GO_BIN_PATH>
-- export NSXV_VERSION=1.0.2
+- export NSXV_VERSION=v1.0.2
 - mkdir -p $GOPATH/src/github.com/IBM-tfproviders
-- git clone -b v$NSXV_VERSION https://github.com/IBM-tfproviders/terraform-provider-nsxv
+- git clone -b $NSXV_VERSION https://github.com/IBM-tfproviders/terraform-provider-nsxv
 - cd $GOPATH/src/github.com/IBM-tfproviders/terraform-provider-nsxv
 - $GO_BIN_LOCATION mod tidy
 - $GO_BIN_LOCATION install
